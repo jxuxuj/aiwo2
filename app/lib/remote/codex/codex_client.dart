@@ -142,6 +142,17 @@ class CodexClient {
     });
   }
 
+  /// Starts a new thread in [cwd] and returns its id.
+  Future<String?> startThread(String cwd) async {
+    final result = await _call('thread/start', <String, Object?>{'cwd': cwd});
+    if (result is Map) {
+      final thread = result['thread'];
+      if (thread is Map && thread['id'] is String) return thread['id'] as String;
+      if (result['id'] is String) return result['id'] as String;
+    }
+    return null;
+  }
+
   /// Stops the running turn.
   Future<void> interrupt(String threadId, String turnId) =>
       _call('turn/interrupt', <String, Object?>{'threadId': threadId, 'turnId': turnId});

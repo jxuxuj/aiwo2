@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../remote/codex/codex_client.dart';
 import '../../state/codex_state.dart';
 import '../../state/connection_state.dart';
+import '../chat/widgets/user_bubble.dart';
 
 /// One Codex thread: history, a composer, stop and branch.
 ///
@@ -249,19 +250,15 @@ class _Bubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final fromUser = message.fromUser;
-    return Align(
-      alignment: fromUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.82),
-        decoration: BoxDecoration(
-          color: fromUser ? scheme.primaryContainer : scheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: SelectableText(message.text),
+    // The user's own messages use the app's real bubble, so the left/right
+    // rhythm, colours and radii are the native ones.
+    if (message.fromUser) return UserBubble(text: message.text);
+    // Assistant text stays on the backdrop the way the native chat shows it.
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+      child: SelectableText(
+        message.text,
+        style: Theme.of(context).textTheme.bodyLarge,
       ),
     );
   }
