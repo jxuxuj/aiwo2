@@ -254,6 +254,7 @@ class CodexHistory {
     final attachments = _collectAttachmentIds(event['data']);
     if (text.isEmpty && attachments.isEmpty) return null;
     return CodexMessage(fromUser: fromUser, text: text, attachmentIds: attachments);
+  }
 
   /// Every image attachment id found anywhere inside [value].
   static List<String> _collectAttachmentIds(Object? value, [int depth = 0]) {
@@ -280,7 +281,6 @@ class CodexHistory {
 
     walk(value, depth);
     return ids;
-  }
   }
 
   /// Whether [value] holds an image content part anywhere inside it.
