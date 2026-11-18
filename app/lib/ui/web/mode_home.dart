@@ -13,6 +13,7 @@ import '../../l10n/l10n.dart';
 import '../../state/backend_state.dart';
 import '../../state/sessions_state.dart';
 import '../../state/ui_mode_state.dart';
+import '../codex/codex_home.dart';
 import '../modes/mode_switch.dart';
 import '../shell/home_shell.dart';
 import '../shell/page_frame.dart';
@@ -54,12 +55,16 @@ class _ModeHomeState extends ConsumerState<ModeHome> {
       _handoff = id == null ? const DshWebTarget(newSession: true) : DshWebTarget(sessionId: id);
     }
     _shown = mode.mode;
+    final backend = ref.watch(backendProvider);
+    final Widget nativeHome = backend == ChatBackend.codex
+        ? const KeyedSubtree(key: ValueKey('codex-home'), child: CodexHome())
+        : KeyedSubtree(key: const ValueKey('dsh-home'), child: widget.native ?? const HomeShell());
     final Widget home = mode.web
         ? KeyedSubtree(
             key: const ValueKey(UiMode.web),
             child: widget.web?.call(_handoff) ?? WebHome(initial: _handoff),
           )
-        : KeyedSubtree(key: const ValueKey(UiMode.native), child: widget.native ?? const HomeShell());
+        : nativeHome;
     // A launch into 伙伴 or 酒馆 opens that page over the home first.
     return ModeLaunch(
       child: AnimatedSwitcher(
