@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../remote/codex/codex_client.dart';
 import '../../state/backend_state.dart';
@@ -157,7 +158,56 @@ class _CodexHomeState extends ConsumerState<CodexHome> {
         ),
       ),
     );
-    if (choice != null && mounted) _notWired(choice);
+    if (choice == null || !mounted) return;
+    if (choice == '从相册选' || choice == '拍照') {
+      await _sendImage(choice == '拍照' ? ImageSource.camera : ImageSource.gallery);
+      return;
+    }
+    _notWired(choice);
+  }
+
+  /// Picks one image and sends it as the prompt of a brand-new thread.
+  Future<void> _sendImage(ImageSource source) async {
+    final codex = _codex;
+    if (codex == null || _sending) return;
+    final root = _newThreadRoot();
+    if (root == null) {
+      _notWired('没有可用工作区');
+      return;
+    }
+    final picked = await ImagePicker().pickImage(source: source, maxWidth: 2048, imageQuality: 90);
+    if (picked == null || !mounted) return;
+    final bytes = await picked.readAsBytes();
+    setState(() => _sending = true);
+    try {
+      final threadId = await codex.startThread(root);
+      if (!mounted) return;
+      if (threadId == null) {
+        _notWired('主机没有返回线程 ID');
+        return;
+      }
+      await codex.sendImage(threadId, bytes, _mediaTypeOf(picked.path), text: _controller.text);
+      _controller.clear();
+      ref.invalidate(codexWorkspaceProvider);
+      if (!mounted) return;
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(builder: (_) => CodexThreadPage(threadId: threadId, title: '图片')),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('发送图片失败：$error')));
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  static String _mediaTypeOf(String path) {
+    final lower = path.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    if (lower.endsWith('.gif')) return 'image/gif';
+    return 'image/jpeg';
   }
 
   Future<void> _pickModel() async {

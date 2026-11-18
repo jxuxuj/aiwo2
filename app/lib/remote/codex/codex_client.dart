@@ -234,13 +234,31 @@ class CodexHistory {
     final isAssistant = type.startsWith('assistant/') || type.startsWith('reasoning');
     if (!fromUser && !isAssistant) return null;
     final text = _collectText(event['data']).trim();
-    if (text.isEmpty) return null;
-    return CodexMessage(fromUser: fromUser, text: text);
+    final hasImage = _containsImage(event['data']);
+    if (text.isEmpty && !hasImage) return null;
+    // Image parts carry a `data:` URL, never body text: show a marker instead
+    // of dumping base64 into the transcript.
+    final body = hasImage ? (text.isEmpty ? '[图片]' : '$text\n[图片]') : text;
+    return CodexMessage(fromUser: fromUser, text: body);
+  }
+
+  /// Whether [value] holds an image content part anywhere inside it.
+  static bool _containsImage(Object? value, [int depth = 0]) {
+    if (depth > 8 || value == null) return false;
+    if (value is Map) {
+      final type = value['type'];
+      if (type == 'image' || type == 'localImage' || type == 'input_image') return true;
+      final url = value['url'];
+      if (url is String && url.startsWith('data:image/')) return true;
+      return value.values.any((item) => _containsImage(item, depth + 1));
+    }
+    if (value is List) return value.any((item) => _containsImage(item, depth + 1));
+    return false;
   }
 
   /// Only content-bearing keys are walked, so ids and roles never leak into
   /// the text; everything under them is joined in document order.
-  static const _textKeys = ['text', 'content', 'message', 'parts', 'items', 'data'];
+  static const _textKeys = ['text', 'content', 'message', 'parts', 'items'];
 
   static String _collectText(Object? value, [int depth = 0]) {
     if (depth > 8 || value == null) return '';
