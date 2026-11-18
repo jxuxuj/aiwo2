@@ -51,6 +51,41 @@ class _CodexHomeState extends ConsumerState<CodexHome> {
     );
   }
 
+  /// The "+" sheet: the same four ways to bring something in as the DeepSeek
+  /// composer. It only shows the choices today; the wiring comes with the
+  /// adapter.
+  Future<void> _attachSheet() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 4, 20, 8),
+              child: Align(alignment: Alignment.centerLeft, child: Text('添加内容', style: TextStyle(fontWeight: FontWeight.w600))),
+            ),
+            for (final (icon, title, subtitle) in const [
+              (Icons.photo_camera_outlined, '拍照', '直接拍一张给 Codex 看'),
+              (Icons.photo_library_outlined, '从相册选', 'PNG / JPEG / WebP / GIF'),
+              (Icons.folder_open_outlined, '工作区文件', '引用项目里已有的文件'),
+              (Icons.attach_file, '本地文件', '放进工作区后告诉 Codex 路径'),
+            ])
+              ListTile(
+                leading: Icon(icon),
+                title: Text(title),
+                subtitle: Text(subtitle),
+                onTap: () => Navigator.of(context).pop(title),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (choice != null && mounted) _notWired(choice);
+  }
+
   Future<void> _pickModel() async {
     final picked = await showModalBottomSheet<String>(
       context: context,
@@ -173,7 +208,7 @@ class _CodexHomeState extends ConsumerState<CodexHome> {
                       ],
                     ),
                   ),
-                  _Composer(onNotWired: () => _notWired('发消息')),
+                  _Composer(onAttach: _attachSheet, onNotWired: () => _notWired('发消息')),
                 ],
               ),
             ),
@@ -447,8 +482,9 @@ class _SuggestionCard extends StatelessWidget {
 }
 
 class _Composer extends StatelessWidget {
-  const _Composer({required this.onNotWired});
+  const _Composer({required this.onAttach, required this.onNotWired});
 
+  final VoidCallback onAttach;
   final VoidCallback onNotWired;
 
   @override
@@ -458,12 +494,14 @@ class _Composer extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
       child: Row(
         children: [
-          IconButton.filledTonal(onPressed: onNotWired, icon: const Icon(Icons.add)),
+          IconButton.filledTonal(onPressed: onAttach, icon: const Icon(Icons.add), tooltip: '添加内容'),
           const SizedBox(width: 8),
           Expanded(
             child: TextField(
               readOnly: true,
               onTap: onNotWired,
+              minLines: 1,
+              maxLines: 4,
               decoration: InputDecoration(
                 hintText: '给 Codex 发消息…',
                 filled: true,
@@ -474,7 +512,7 @@ class _Composer extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          IconButton.filled(onPressed: onNotWired, icon: const Icon(Icons.mic)),
+          IconButton.filled(onPressed: onNotWired, icon: const Icon(Icons.mic), tooltip: '语音'),
         ],
       ),
     );
