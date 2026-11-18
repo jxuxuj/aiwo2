@@ -6,7 +6,7 @@ import 'package:dsh_client/dsh_client.dart';
 /// One Codex thread as the Host's `thread/list` reports it.
 ///
 /// The Host sanitises the App Server response to exactly these fields, so a
-/// missing field means the Host did not have it — never guess a default that
+/// missing field means the Host did not have it 鈥?never guess a default that
 /// looks like real content.
 class CodexThread {
   const CodexThread({required this.id, this.name, this.preview, this.cwd, this.updatedAt, this.projectId});
@@ -157,6 +157,21 @@ class CodexClient {
   Future<void> interrupt(String threadId, String turnId) =>
       _call('turn/interrupt', <String, Object?>{'threadId': threadId, 'turnId': turnId});
 
+  /// One image of a thread, decoded from the Host's base64 attachment.
+  Future<Uint8List?> fetchAttachment(String threadId, String attachmentId) async {
+    final result = await _call('dsh/sessionAttachment', <String, Object?>{
+      'threadId': threadId,
+      'attachmentId': attachmentId,
+    });
+    if (result is! Map) return null;
+    final data = result['data'];
+    if (data is! String || data.isEmpty) return null;
+    try {
+      return base64Decode(data);
+    } on FormatException {
+      return null;
+    }
+  }
   /// Sends one image as a Prompt. The Host only accepts PNG/JPEG/WebP/GIF and
   /// converts the bytes to a `data:` URL itself; anything else is refused by
   /// the Host's own validation.
@@ -170,8 +185,7 @@ class CodexClient {
       <String, Object?>{
         'method': 'turn/start',
         'params': {'threadId': threadId, 'input': input},
-      },
-      forceChunked: true,
+      }
     );
   }
 
@@ -189,10 +203,13 @@ class CodexClient {
 
 /// One readable line of a thread.
 class CodexMessage {
-  const CodexMessage({required this.fromUser, required this.text});
+  const CodexMessage({required this.fromUser, required this.text, this.attachmentIds = const <String>[]});
 
   final bool fromUser;
   final String text;
+
+  /// Images that belong to this message, fetched on demand by id.
+  final List<String> attachmentIds;
 }
 
 /// A page of thread history with the paging hints the Host returned.
@@ -234,12 +251,36 @@ class CodexHistory {
     final isAssistant = type.startsWith('assistant/') || type.startsWith('reasoning');
     if (!fromUser && !isAssistant) return null;
     final text = _collectText(event['data']).trim();
-    final hasImage = _containsImage(event['data']);
-    if (text.isEmpty && !hasImage) return null;
-    // Image parts carry a `data:` URL, never body text: show a marker instead
-    // of dumping base64 into the transcript.
-    final body = hasImage ? (text.isEmpty ? '[图片]' : '$text\n[图片]') : text;
-    return CodexMessage(fromUser: fromUser, text: body);
+    final attachments = _collectAttachmentIds(event['data']);
+    if (text.isEmpty && attachments.isEmpty) return null;
+    return CodexMessage(fromUser: fromUser, text: text, attachmentIds: attachments);
+
+  /// Every image attachment id found anywhere inside [value].
+  static List<String> _collectAttachmentIds(Object? value, [int depth = 0]) {
+    if (depth > 8 || value == null) return const <String>[];
+    final ids = <String>[];
+    void walk(Object? node, int level) {
+      if (level > 8 || node == null) return;
+      if (node is List) {
+        for (final item in node) {
+          walk(item, level + 1);
+        }
+        return;
+      }
+      if (node is! Map) return;
+      final attachment = node['attachment'];
+      if (attachment is Map) {
+        final id = attachment['attachmentId'];
+        if (id is String && id.isNotEmpty) ids.add(id);
+      }
+      for (final entry in node.values) {
+        walk(entry, level + 1);
+      }
+    }
+
+    walk(value, depth);
+    return ids;
+  }
   }
 
   /// Whether [value] holds an image content part anywhere inside it.

@@ -163,7 +163,7 @@ class _CodexThreadPageState extends ConsumerState<CodexThreadPage> {
       ),
       body: Column(
         children: [
-          Expanded(child: _Body(history: history)),
+          Expanded(child: _Body(threadId: widget.threadId, history: history)),
           SafeArea(
             top: false,
             child: Padding(
@@ -215,8 +215,9 @@ class _CodexThreadPageState extends ConsumerState<CodexThreadPage> {
 }
 
 class _Body extends StatelessWidget {
-  const _Body({required this.history});
+  const _Body({required this.threadId, required this.history});
 
+  final String threadId;
   final AsyncValue<CodexHistory> history;
 
   @override
@@ -236,30 +237,78 @@ class _Body extends StatelessWidget {
         return ListView.builder(
           padding: const EdgeInsets.symmetric(vertical: 12),
           itemCount: page.messages.length,
-          itemBuilder: (context, index) => _Bubble(message: page.messages[index]),
+          itemBuilder: (context, index) => _Bubble(threadId: threadId, message: page.messages[index]),
         );
       },
     );
   }
 }
 
-class _Bubble extends StatelessWidget {
-  const _Bubble({required this.message});
+class _Bubble extends ConsumerWidget {
+  const _Bubble({required this.threadId, required this.message});
 
+  final String threadId;
   final CodexMessage message;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final images = <Widget>[
+      for (final id in message.attachmentIds) _AttachmentImage(threadId: threadId, attachmentId: id),
+    ];
     // The user's own messages use the app's real bubble, so the left/right
     // rhythm, colours and radii are the native ones.
-    if (message.fromUser) return UserBubble(text: message.text);
-    // Assistant text stays on the backdrop the way the native chat shows it.
+    if (message.fromUser) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          ...images,
+          if (message.text.isNotEmpty) UserBubble(text: message.text),
+        ],
+      );
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
-      child: SelectableText(
-        message.text,
-        style: Theme.of(context).textTheme.bodyLarge,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ...images,
+          if (message.text.isNotEmpty)
+            SelectableText(message.text, style: Theme.of(context).textTheme.bodyLarge),
+        ],
       ),
+    );
+  }
+}
+
+/// One image of a message, decoded from the Host on demand.
+class _AttachmentImage extends ConsumerWidget {
+  const _AttachmentImage({required this.threadId, required this.attachmentId});
+
+  final String threadId;
+  final String attachmentId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bytes = ref.watch(codexAttachmentProvider((threadId: threadId, attachmentId: attachmentId)));
+    final scheme = Theme.of(context).colorScheme;
+    return bytes.when(
+      loading: () => Container(
+        width: 180,
+        height: 120,
+        margin: const EdgeInsets.only(bottom: 6),
+        decoration: BoxDecoration(color: scheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
+        child: const Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))),
+      ),
+      error: (_, __) => const Padding(padding: EdgeInsets.only(bottom: 6), child: Text('[图片加载失败]')),
+      data: (data) => data == null
+          ? const Padding(padding: EdgeInsets.only(bottom: 6), child: Text('[图片不可用]'))
+          : Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.memory(data, width: 220, fit: BoxFit.contain),
+              ),
+            ),
     );
   }
 }

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../remote/codex/codex_client.dart';
@@ -67,4 +69,12 @@ final codexHistoryProvider = FutureProvider.autoDispose.family<CodexHistory, Str
   final client = ref.watch(activeConnectionProvider).value?.client;
   if (client == null) return const CodexHistory(messages: <CodexMessage>[], hasMore: false);
   return CodexClient(client.carrier).readHistory(threadId);
+});
+
+/// One image of a thread, decoded from the Host's base64 attachment.
+final codexAttachmentProvider =
+    FutureProvider.autoDispose.family<Uint8List?, ({String threadId, String attachmentId})>((ref, key) async {
+  final client = ref.watch(activeConnectionProvider).value?.client;
+  if (client == null) return null;
+  return CodexClient(client.carrier).fetchAttachment(key.threadId, key.attachmentId);
 });
