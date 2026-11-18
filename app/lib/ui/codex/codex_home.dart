@@ -22,71 +22,87 @@ class CodexHome extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Scaffold(
-      backgroundColor: scheme.surface,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _TopBar(onSwitch: () => ref.read(backendProvider.notifier).toggle()),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 32, 20, 24),
+    // Codex's own shell is dark regardless of the app theme: near-black
+    // backdrop, cool grey cards, one accent. Everything below reads the
+    // colour scheme, so wrapping once is enough.
+    final darkScheme = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF6E8BFF),
+      brightness: Brightness.dark,
+      surface: const Color(0xFF0E1014),
+    );
+    final base = ThemeData(colorScheme: darkScheme, useMaterial3: true);
+    return Theme(
+      data: base,
+      child: Builder(
+        builder: (context) {
+          final theme = Theme.of(context);
+          final scheme = theme.colorScheme;
+          return Scaffold(
+            backgroundColor: scheme.surface,
+            body: SafeArea(
+              child: Column(
                 children: [
-                  const SizedBox(height: 40),
-                  Center(
-                    child: Text(
-                      '中午好',
-                      style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Center(child: Text('今天想做点什么？', style: theme.textTheme.titleMedium)),
-                  const SizedBox(height: 20),
-                  Center(child: _Pill(icon: Icons.folder_outlined, label: '在「Codex」中')),
-                  const SizedBox(height: 12),
-                  Center(
-                    child: Wrap(
-                      spacing: 12,
-                      children: const [
-                        _Pill(icon: Icons.build_outlined, label: '标准模式'),
-                        _Pill(icon: Icons.shield_outlined, label: '工作区内修改'),
+                  _TopBar(onSwitch: () => ref.read(backendProvider.notifier).toggle()),
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(20, 32, 20, 24),
+                      children: [
+                        const SizedBox(height: 40),
+                        Center(
+                          child: Text(
+                            '中午好',
+                            style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Center(child: Text('今天想做点什么？', style: theme.textTheme.titleMedium)),
+                        const SizedBox(height: 20),
+                        Center(child: _Pill(icon: Icons.folder_outlined, label: '在「Codex」中')),
+                        const SizedBox(height: 12),
+                        Center(
+                          child: Wrap(
+                            spacing: 12,
+                            children: const [
+                              _Pill(icon: Icons.build_outlined, label: '标准模式'),
+                              _Pill(icon: Icons.shield_outlined, label: '工作区内修改'),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 28),
+                        GridView.count(
+                          crossAxisCount: 2,
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          mainAxisSpacing: 12,
+                          crossAxisSpacing: 12,
+                          childAspectRatio: 1.9,
+                          children: [
+                            for (final (icon, title, subtitle, tint) in _suggestions)
+                              _SuggestionCard(icon: icon, title: title, subtitle: subtitle, tint: tint),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+                        Row(
+                          children: [
+                            Icon(Icons.lightbulb_outline, size: 16, color: scheme.onSurfaceVariant),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                '长按侧栏里的对话，可以置顶、改名或归档',
+                                style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                              ),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 28),
-                  GridView.count(
-                    crossAxisCount: 2,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
-                    childAspectRatio: 1.9,
-                    children: [
-                      for (final (icon, title, subtitle, tint) in _suggestions)
-                        _SuggestionCard(icon: icon, title: title, subtitle: subtitle, tint: tint),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  Row(
-                    children: [
-                      Icon(Icons.lightbulb_outline, size: 16, color: scheme.onSurfaceVariant),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          '长按侧栏里的对话，可以置顶、改名或归档',
-                          style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-                        ),
-                      ),
-                    ],
-                  ),
+                  _Composer(onUseDeepSeek: () => ref.read(backendProvider.notifier).toggle()),
                 ],
               ),
             ),
-            _Composer(onUseDeepSeek: () => ref.read(backendProvider.notifier).toggle()),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
