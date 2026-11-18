@@ -55,6 +55,12 @@ jobs:
             --target-platform android-arm64 \
             --build-name "${{ inputs.build_name }}"
 
+      - name: Verify signing certificate
+        run: |
+          APK=app/build/app/outputs/flutter-apk/app-arm64-debug.apk
+          APKSIGNER=$(ls -1d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)
+          "$APKSIGNER" verify --print-certs "$APK" | head -n 6
+
       - name: Publish to rolling release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -65,4 +71,5 @@ jobs:
           cp app/build/app/outputs/flutter-apk/app-arm64-debug.apk "aiwo-${{ inputs.build_name }}-arm64.apk"
           gh release upload "$TAG" "aiwo-${{ inputs.build_name }}-arm64.apk" --clobber
           echo "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/aiwo-${{ inputs.build_name }}-arm64.apk"
+
 
