@@ -101,7 +101,7 @@ class _CodexHomeState extends ConsumerState<CodexHome> {
         _notWired('主机没有返回线程 ID');
         return;
       }
-      await codex.sendText(threadId, text, permissionPreset: _permission, effort: _fast ? 'low' : null);
+      await codex.sendText(threadId, text);
       _controller.clear();
       ref.invalidate(codexWorkspaceProvider);
       if (!mounted) return;
