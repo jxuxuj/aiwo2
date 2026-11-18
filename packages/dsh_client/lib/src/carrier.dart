@@ -63,20 +63,6 @@ abstract class DshCarrier {
   /// [DshProtocolException], [DshCarrierRefusedException]).
   Future<RpcResult> call(String endpoint, Map<String, Object?> args, {Duration? timeout});
 
-  /// One unary call to a non-Harness RPC method on the same link (the Codex
-  /// domain uses `codex.app.call`). A carrier that has no such channel
-  /// rejects with [UnsupportedError]; callers must treat it as unavailable.
-  Future<Object?> rawCall(String method, Object? params, {Duration? timeout}) =>
-      Future<Object?>.error(UnsupportedError('$runtimeType has no raw RPC channel'));
-
-  /// [rawCall] for a payload that may not fit one frame. Carriers without a
-  /// chunked path fall back to the inline call and let the Host refuse it.
-  ///
-  /// [forceChunked] is for payloads the Host only accepts through its chunked
-  /// carrier (a Codex image Prompt), whatever their size.
-  Future<Object?> rawCallChunked(String method, Object? params, {Duration? timeout, bool forceChunked = false}) =>
-      rawCall(method, params, timeout: timeout);
-
   /// Opens a fresh physical link for [DshMux].
   ///
   /// Throw [DshHttpException] 401/403 or [DshCarrierRefusedException] when a

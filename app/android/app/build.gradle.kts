@@ -49,7 +49,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.aiwo.dsh"
+        applicationId = "io.github.ccch1mneyyy.dsh_app"
         // java.nio.file (symlinks while unpacking the rootfs) needs API 26.
         minSdk = 26
         // Target 28 like Termux, so the API 29+ exec restriction on app-private
