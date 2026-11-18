@@ -15,6 +15,7 @@ import 'codex_state.dart';
 import 'connection_state.dart';
 import 'hosts_state.dart';
 import 'models_state.dart';
+import 'new_chat_modes.dart' show codexPermissionPresets;
 import 'notify_state.dart' show appForegroundProvider;
 import 'run_pulse.dart';
 import 'sessions_state.dart';
@@ -288,6 +289,8 @@ class ChatState {
     this.notice,
     this.connection,
     this.model,
+    this.codexPermission,
+    this.codexPermissionEditable = false,
     this.pending = const [],
     this.autoApprove = false,
     this.autoAnswered = const {},
@@ -337,6 +340,9 @@ class ChatState {
   /// Model the next request uses (latest `model/selection`, else the
   /// session projection). Null until the session reports one.
   final ModelSelection? model;
+
+  final String? codexPermission;
+  final bool codexPermissionEditable;
 
   /// Prompts sent from here and not yet echoed by the transcript.
   final List<PendingPrompt> pending;
@@ -399,6 +405,8 @@ class ChatState {
     String? notice,
     bool clearNotice = false,
     ModelSelection? model,
+    String? codexPermission,
+    bool? codexPermissionEditable,
     List<PendingPrompt>? pending,
     bool? autoApprove,
     Set<String>? autoAnswered,
@@ -422,6 +430,8 @@ class ChatState {
     notice: clearNotice ? null : (notice ?? this.notice),
     connection: connection,
     model: model ?? this.model,
+    codexPermission: codexPermission ?? this.codexPermission,
+    codexPermissionEditable: codexPermissionEditable ?? this.codexPermissionEditable,
     pending: pending ?? this.pending,
     autoApprove: autoApprove ?? this.autoApprove,
     autoAnswered: autoAnswered ?? this.autoAnswered,
@@ -1937,6 +1947,16 @@ class ChatController extends Notifier<ChatState> with _CodexChat {
       return false;
     }
   }
+
+  /// Sets the permissions confirmed by Codex when starting this session.
+  void initializeCodexThread(CodexThreadSettings settings) {
+    if (_isCodex) _initializeCodexThread(settings);
+  }
+
+  Future<bool> setCodexPermission(String preset) async => _isCodex && await _setCodexPermission(preset);
+
+  /// Gives up this client's idle subscription when the user moves to desktop.
+  Future<bool> releaseCodexForDesktop() async => _isCodex && await _releaseCodexForDesktop();
 
   /// Switches the model for this session (takes effect on the next request).
   Future<bool> setModel(ModelSelection selection) async {

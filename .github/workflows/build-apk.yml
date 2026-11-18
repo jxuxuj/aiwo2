@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       build_name:
-        description: 'Version name, e.g. 1.2.0-aiwo.20'
+        description: 'Version name, e.g. 1.2.0-aiwo.21'
         required: false
-        default: '1.2.0-aiwo.20'
+        default: '1.2.0-aiwo.21'
 
 permissions:
   contents: write
@@ -43,6 +43,15 @@ jobs:
         working-directory: app
         run: flutter pub get --enforce-lockfile
 
+      - name: Stage the matching DSH Go 1.2.0 Ubuntu runtime
+        run: |
+          upstream_apk="$RUNNER_TEMP/dsh-go-1.2.0-arm64.apk"
+          curl --fail --silent --show-error --location --retry 3 \
+            --output "$upstream_apk" \
+            'https://github.com/ccch1mneyyy/dsh-Go/releases/download/v1.2.0/dsh-go-1.2.0-arm64.apk'
+          echo "40c2d2612533f28fef2c0bb4acf3cb80d6d45bfede405c21e73dcce613aed718  $upstream_apk" | sha256sum -c -
+          python3 tooling/stage_aiwo_android_runtime.py "$upstream_apk"
+
       - name: Build release APK
         working-directory: app
         run: |
@@ -56,6 +65,7 @@ jobs:
           AAPT=$(ls -1d "$ANDROID_HOME"/build-tools/*/aapt | sort -V | tail -n 1)
           "$AAPT" dump badging "$APK" > apk-badging.txt
           grep '^package:' apk-badging.txt | grep -F "name='com.aiwo.dsh'" | grep -F "versionName='$BUILD_NAME'"
+          python3 tooling/stage_aiwo_android_runtime.py "$APK"
 
       - name: Stage unsigned APK for local signing
         env:

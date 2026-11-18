@@ -13,6 +13,21 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
+  test('desktop links use the stored native Codex thread ID', () {
+    const id = '01962a3d-a27f-7123-a5b3-993097c06196';
+    expect(codexDesktopThreadLink(codexSessionId(id)).toString(), 'codex://threads/$id');
+    expect(codexDesktopThreadLink('deepseek-thread'), isNull);
+    expect(codexDesktopThreadLink(codexSessionId('')), isNull);
+  });
+
+  test('workspace comparisons join ordinary and extended Windows paths', () {
+    expect(codexWorkspaceComparisonPath(r'\\?\D:\Work\App'), codexWorkspaceComparisonPath(r'd:\work\app\'));
+    expect(codexWorkspaceComparisonPath(r'\\?\UNC\Server\Share'), codexWorkspaceComparisonPath(r'\\server\share'));
+    expect(codexWorkspaceComparisonPath(r'\\?\D:\'), 'd:/');
+    expect(codexWorkspaceComparisonPath('/home/Work/'), '/home/Work');
+    expect(codexWorkspaceComparisonPath('relative/path'), isNull);
+  });
+
   test('switching backends restores their respective session selections', () async {
     final container = ProviderContainer.test();
     await container.read(activeHostProvider.notifier).ready;

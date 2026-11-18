@@ -19207,6 +19207,15 @@ class L10nZh extends L10n {
   String get stateChatWriterHeld => '这个对话正在别处使用';
 
   @override
+  String get stateCodexThreadBusy => '这个 Codex 对话正在电脑或另一客户端使用。请先结束任务并关闭对应对话，必要时完全退出桌面 Codex，再重试。';
+
+  @override
+  String get stateCodexContinueOnDesktop => '在桌面继续';
+
+  @override
+  String get stateCodexDesktopLinkCopied => '已复制链接，可在运行这个 Codex 会话的电脑上打开。';
+
+  @override
   String get stateChatModelUnavailable => '这个模型现在用不了';
 
   @override

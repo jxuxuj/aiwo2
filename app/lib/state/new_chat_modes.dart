@@ -59,6 +59,11 @@ class PendingNewChatModes extends Notifier<NewChatModes> {
 
 final pendingNewChatModesProvider = NotifierProvider<PendingNewChatModes, NewChatModes>(PendingNewChatModes.new);
 
+const codexDefaultPermissionPreset = 'workspace-write';
+const codexPermissionPresets = [codexDefaultPermissionPreset, 'danger-full-access'];
+
+final pendingCodexNewChatModesProvider = NotifierProvider<PendingNewChatModes, NewChatModes>(PendingNewChatModes.new);
+
 /// What a session made on the new-chat screen still owes before its first
 /// prompt: the picks the Host has not confirmed yet. Null fields are settled.
 class OwedSetup {

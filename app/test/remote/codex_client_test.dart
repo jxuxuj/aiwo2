@@ -63,6 +63,7 @@ void main() {
       'thread-1',
       'Describe these',
       model: 'gpt-codex',
+      reasoningEffort: 'high',
       images: [
         (bytes: Uint8List.fromList([1, 2, 3]), mediaType: 'image/png'),
         (bytes: Uint8List.fromList([4, 5]), mediaType: 'image/jpeg'),
@@ -76,6 +77,7 @@ void main() {
     expect(params, {
       'threadId': 'thread-1',
       'model': 'gpt-codex',
+      'effort': 'high',
       'input': [
         {'type': 'image', 'mediaType': 'image/png', 'data': 'AQID'},
         {'type': 'image', 'mediaType': 'image/jpeg', 'data': 'BAU='},
@@ -86,8 +88,13 @@ void main() {
 
   test('steers the active turn inline without a model override', () async {
     final carrier = _Carrier((_, _, _) => const {});
-    final turnId = await CodexClient(carrier)
-        .sendPrompt('thread-1', 'More context', model: 'next-model', expectedTurnId: 'turn-live');
+    final turnId = await CodexClient(carrier).sendPrompt(
+      'thread-1',
+      'More context',
+      model: 'next-model',
+      reasoningEffort: 'xhigh',
+      expectedTurnId: 'turn-live',
+    );
 
     expect(turnId, 'turn-live');
     final (method, params, transfer) = carrier.calls.single;
@@ -100,6 +107,15 @@ void main() {
         {'type': 'text', 'text': 'More context'},
       ],
     });
+  });
+
+  test('rejects an effort without an explicit model before starting a turn', () async {
+    final carrier = _Carrier((_, _, _) => throw StateError('Unexpected request'));
+    await expectLater(
+      CodexClient(carrier).sendPrompt('thread-1', 'Use the effort', reasoningEffort: 'low'),
+      throwsArgumentError,
+    );
+    expect(carrier.calls, isEmpty);
   });
 
   test('fits oversized pictures into the inline budget while retaining small originals', () async {
@@ -129,9 +145,77 @@ void main() {
 
   test('resumes an existing thread without turn or permission parameters', () async {
     final carrier = _Carrier((_, _, _) => const {});
-    await CodexClient(carrier).resumeThread('thread-1');
+    final settings = await CodexClient(carrier).resumeThread('thread-1');
+    expect(settings.threadId, 'thread-1');
+    expect(settings.permissionPreset, isNull);
     final (method, params, transfer) = carrier.calls.single;
     expect(method, 'thread/resume');
+    expect(params, {'threadId': 'thread-1'});
+    expect(transfer, isFalse);
+  });
+
+  test('starts a thread with its selected preset and returns the Host-confirmed settings', () async {
+    final carrier = _Carrier(
+      (_, _, _) => {
+        'thread': {'id': 'thread-1'},
+        'model': 'gpt-codex',
+        'reasoningEffort': 'medium',
+        'approvalPolicy': 'never',
+        'sandbox': {'type': 'dangerFullAccess'},
+      },
+    );
+
+    final settings = await CodexClient(carrier)
+        .startThread(r'C:\work\one', model: 'gpt-codex', permissionPreset: 'workspace-write');
+
+    expect(settings?.threadId, 'thread-1');
+    expect(settings?.model, 'gpt-codex');
+    expect(settings?.reasoningEffort, 'medium');
+    expect(settings?.permissionPreset, 'danger-full-access');
+    final (method, params, transfer) = carrier.calls.single;
+    expect(method, 'thread/start');
+    expect(params, {'cwd': r'C:\work\one', 'model': 'gpt-codex', 'permissionPreset': 'workspace-write'});
+    expect(transfer, isFalse);
+  });
+
+  test('parses an existing thread permission change only when both policies match', () async {
+    var approval = 'on-request';
+    final carrier = _Carrier(
+      (_, _, _) => {
+        'thread': {'id': 'thread-1'},
+        'threadSettings': {
+          'sandboxPolicy': {'type': 'workspaceWrite'},
+          'approvalPolicy': approval,
+          'model': 'gpt-codex',
+          'effort': 'high',
+        },
+      },
+    );
+    final client = CodexClient(carrier);
+
+    final settings = await client.resumeThread('thread-1', permissionPreset: 'workspace-write');
+    expect(settings.model, 'gpt-codex');
+    expect(settings.reasoningEffort, 'high');
+    expect(settings.permissionPreset, 'workspace-write');
+    expect(carrier.calls.single.$1, 'thread/resume');
+    expect(carrier.calls.single.$2, {'threadId': 'thread-1', 'permissionPreset': 'workspace-write'});
+    expect(carrier.calls.single.$3, isFalse);
+
+    approval = 'never';
+    final customPair = await client.resumeThread('thread-1', model: 'gpt-codex', permissionPreset: 'workspace-write');
+    expect(customPair.permissionPreset, isNull);
+    expect(carrier.calls.last.$2, {
+      'threadId': 'thread-1',
+      'model': 'gpt-codex',
+      'permissionPreset': 'workspace-write',
+    });
+  });
+
+  test('detaches only the requested thread through the Host', () async {
+    final carrier = _Carrier((_, _, _) => {'status': 'unsubscribed'});
+    await CodexClient(carrier).unsubscribeThread('thread-1');
+    final (method, params, transfer) = carrier.calls.single;
+    expect(method, 'thread/unsubscribe');
     expect(params, {'threadId': 'thread-1'});
     expect(transfer, isFalse);
   });
@@ -189,13 +273,31 @@ void main() {
         },
         ('model/list', null) => {
           'data': [
-            {'id': 'catalog-entry', 'model': 'gpt-codex', 'displayName': 'Codex'},
+            {
+              'id': 'catalog-entry',
+              'model': 'gpt-codex',
+              'displayName': 'Codex',
+              'description': 'Coding model',
+              'isDefault': true,
+              'supportedReasoningEfforts': [
+                {'reasoningEffort': 'low', 'description': 'Fast answers'},
+                {'reasoningEffort': 'high', 'description': 'More deliberation'},
+                {'reasoningEffort': 'persistent'},
+              ],
+              'defaultReasoningEffort': 'high',
+            },
           ],
           'nextCursor': 'models-2',
         },
         ('model/list', 'models-2') => {
           'data': [
-            {'id': 'another-model'},
+            {
+              'id': 'another-model',
+              'defaultReasoningEffort': 'medium',
+              'supportedReasoningEfforts': [
+                {'reasoningEffort': 'low'},
+              ],
+            },
             {'id': 'hidden-model', 'hidden': true},
           ],
         },
@@ -212,7 +314,14 @@ void main() {
     expect(threads.map((thread) => thread.running), [true, false]);
     expect(threads.map((thread) => thread.isPinned), [true, false]);
     final models = await client.listModels();
-    expect(models, [('gpt-codex', 'Codex'), ('another-model', 'another-model')]);
+    expect(models.map((model) => (model.id, model.name)), [('gpt-codex', 'Codex'), ('another-model', 'another-model')]);
+    final primary = models.first;
+    expect(primary.isDefault, isTrue);
+    expect(primary.description, 'Coding model');
+    expect(primary.defaultEffort, 'high');
+    expect(primary.efforts.map((effort) => effort.id), ['low', 'high']);
+    expect(primary.efforts.first.description, 'Fast answers');
+    expect(models.last.defaultEffort, isNull);
     expect(carrier.calls.where((call) => call.$1 == 'thread/list').last.$2, {
       'limit': 2,
       'sortKey': 'recency_at',
@@ -231,6 +340,7 @@ void main() {
         'cursor': 12,
         'nextTurn': 3,
         'activeTurnId': 'turn-live',
+        'permissionPreset': 'workspace-write',
         'hasMore': true,
         'records': [
           _event(4, 'turn/start', {'turn': 2}),
@@ -275,6 +385,7 @@ void main() {
     expect(history.model, 'gpt-codex');
     expect(history.reasoningEffort, 'high');
     expect(history.activeTurnId, 'turn-live');
+    expect(history.permissionPreset, 'workspace-write');
     expect(history.cursor, 12);
     expect(history.oldestSeq, 4);
     expect(history.nextTurn, 3);

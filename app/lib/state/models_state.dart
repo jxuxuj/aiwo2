@@ -75,11 +75,22 @@ final codexModelCatalogProvider = FutureProvider.autoDispose<ModelCatalog?>((ref
   final conn = connection.value;
   if (conn == null || conn.isLocal) return null;
   final entries = await CodexClient(conn.client.carrier).listModels();
+  final defaultModel = entries.where((entry) => entry.isDefault).firstOrNull;
   final models = [
-    for (final (id, name) in entries) ModelInfo(provider: 'codex', id: id, name: name),
+    for (final entry in entries)
+      ModelInfo(
+        provider: 'codex',
+        id: entry.id,
+        name: entry.name,
+        description: entry.description,
+        efforts: entry.efforts,
+        defaultEffort: entry.defaultEffort,
+      ),
   ];
   return ModelCatalog(
-    defaultSelection: null,
+    defaultSelection: defaultModel == null
+        ? null
+        : ModelSelection(provider: 'codex', model: defaultModel.id, reasoningEffort: defaultModel.defaultEffort),
     routableProviders: models.isEmpty ? const [] : const ['codex'],
     groups: [ProviderGroup('codex', 'Codex', models)],
     failures: const [],

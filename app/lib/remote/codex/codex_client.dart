@@ -14,6 +14,9 @@ typedef _PromptImage = ({Uint8List bytes, String mediaType});
 const _inlinePromptBudget = 3 * 1024 * 1024;
 const _promptEnvelopeReserve = 16 * 1024;
 
+// Only levels accepted by the Remote Host's turn/start method can be selected.
+const _remoteReasoningEfforts = {'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'};
+
 int _base64Size(int bytes) => ((bytes + 2) ~/ 3) * 4;
 
 Future<List<_PromptImage>> _fitInlineImages(List<_PromptImage> images, String text) async {
@@ -178,6 +181,66 @@ class CodexProject {
   }
 }
 
+/// A model and the selectable reasoning levels reported by the Host.
+class CodexModel {
+  const CodexModel({
+    required this.id,
+    required this.name,
+    required this.efforts,
+    this.description,
+    this.defaultEffort,
+    this.isDefault = false,
+  });
+
+  final String id;
+  final String name;
+  final String? description;
+  final List<ReasoningEffort> efforts;
+  final String? defaultEffort;
+  final bool isDefault;
+}
+
+/// The effective settings returned by `thread/start` or `thread/resume`.
+class CodexThreadSettings {
+  const CodexThreadSettings({required this.threadId, this.model, this.reasoningEffort, this.permissionPreset});
+
+  final String threadId;
+  final String? model;
+  final String? reasoningEffort;
+  final String? permissionPreset;
+
+  static CodexThreadSettings? _parse(Object? result, {String? expectedThreadId}) {
+    if (result is! Map) return null;
+    final thread = result['thread'];
+    final reportedId = (thread is Map ? _nonEmptyString(thread['id']) : null) ?? _nonEmptyString(result['id']);
+    final threadId = reportedId ?? expectedThreadId;
+    if (threadId == null) return null;
+    if (expectedThreadId != null && threadId != expectedThreadId) {
+      throw const DshProtocolException('thread/resume: unexpected thread id');
+    }
+    final rawSettings = result['threadSettings'];
+    final settings = rawSettings is Map ? rawSettings : const {};
+    return CodexThreadSettings(
+      threadId: threadId,
+      model: _nonEmptyString(result['model']) ?? _nonEmptyString(settings['model']),
+      reasoningEffort: _nonEmptyString(result['reasoningEffort']) ?? _nonEmptyString(settings['effort']),
+      permissionPreset: _confirmedPermissionPreset(result) ?? _confirmedPermissionPreset(settings),
+    );
+  }
+
+  // Mirrors Host confirmation: each of the sandbox and approval settings can
+  // also be used in combinations which the Remote permission picker cannot set.
+  static String? _confirmedPermissionPreset(Map settings) {
+    final sandbox = settings['sandbox'] ?? settings['sandboxPolicy'];
+    final sandboxType = sandbox is Map ? sandbox['type'] : sandbox;
+    return switch ((settings['approvalPolicy'], sandboxType)) {
+      ('on-request', 'workspace-write' || 'workspaceWrite') => 'workspace-write',
+      ('never', 'danger-full-access' || 'dangerFullAccess') => 'danger-full-access',
+      _ => null,
+    };
+  }
+}
+
 /// Minimal Codex client over an already-authenticated Remote carrier.
 ///
 /// Calls go out as `codex.app.call` with `{method, params}`; the Host runs
@@ -207,20 +270,39 @@ class CodexClient {
   }
 
   /// The models the Host's Codex offers.
-  Future<List<(String id, String name)>> listModels({int limit = 50}) =>
-      _listAll('model/list', {'limit': limit, 'includeHidden': false}, _parseModels, (model) => model.$1);
+  Future<List<CodexModel>> listModels({int limit = 50}) =>
+      _listAll('model/list', {'limit': limit, 'includeHidden': false}, _parseModels, (model) => model.id);
 
-  static List<(String, String)> _parseModels(Object? result) {
+  static List<CodexModel> _parseModels(Object? result) {
     if (result is! Map) return const [];
     final data = result['data'];
     if (data is! List) return const [];
-    final models = <(String, String)>[];
+    final models = <CodexModel>[];
     for (final item in data) {
       if (item is! Map || item['hidden'] == true) continue;
       final id = _nonEmptyString(item['model']) ?? _nonEmptyString(item['id']);
       if (id == null) continue;
       final name = _nonEmptyString(item['displayName']) ?? _nonEmptyString(item['name']) ?? id;
-      models.add((id, name));
+      final rawEfforts = item['supportedReasoningEfforts'];
+      final efforts = <String, ReasoningEffort>{};
+      if (rawEfforts is List) {
+        for (final entry in rawEfforts.whereType<Map>()) {
+          final level = _nonEmptyString(entry['reasoningEffort']);
+          if (level == null || !_remoteReasoningEfforts.contains(level)) continue;
+          efforts.putIfAbsent(level, () => ReasoningEffort(level, level, _nonEmptyString(entry['description'])));
+        }
+      }
+      final defaultEffort = _nonEmptyString(item['defaultReasoningEffort']);
+      models.add(
+        CodexModel(
+          id: id,
+          name: name,
+          description: _nonEmptyString(item['description']),
+          efforts: efforts.values.toList(growable: false),
+          defaultEffort: efforts.containsKey(defaultEffort) ? defaultEffort : null,
+          isDefault: item['isDefault'] == true,
+        ),
+      );
     }
     return models;
   }
@@ -279,9 +361,16 @@ class CodexClient {
     String threadId,
     String text, {
     String? model,
+    String? reasoningEffort,
     List<({Uint8List bytes, String mediaType})> images = const [],
     String? expectedTurnId,
   }) async {
+    final steerTurnId = _nonEmptyString(expectedTurnId);
+    final decisionModel = _nonEmptyString(model);
+    final effort = _nonEmptyString(reasoningEffort);
+    if (steerTurnId == null && effort != null && (decisionModel == null || !_remoteReasoningEfforts.contains(effort))) {
+      throw ArgumentError('Codex reasoning effort requires a model and a level supported by the Host');
+    }
     final inlineImages = await _fitInlineImages(images, text);
     final input = <Map<String, Object?>>[
       for (final image in inlineImages)
@@ -289,11 +378,10 @@ class CodexClient {
       if (text.trim().isNotEmpty) {'type': 'text', 'text': text},
     ];
     if (input.isEmpty) throw ArgumentError('A Codex prompt requires text or an image');
-    final steerTurnId = _nonEmptyString(expectedTurnId);
     final result = await _call(steerTurnId == null ? 'turn/start' : 'turn/steer', <String, Object?>{
       'threadId': threadId,
       'input': input,
-      if (steerTurnId != null) 'expectedTurnId': steerTurnId else if (model != null && model.isNotEmpty) 'model': model,
+      if (steerTurnId != null) 'expectedTurnId': steerTurnId else ...{'model': ?decisionModel, 'effort': ?effort},
     });
     if (result is! Map) return steerTurnId;
     final turn = result['turn'];
@@ -305,20 +393,27 @@ class CodexClient {
     await sendPrompt(threadId, text, model: model);
   }
 
-  /// Starts a new thread in [cwd] and returns its id.
-  Future<String?> startThread(String cwd) async {
-    final result = await _call('thread/start', <String, Object?>{'cwd': cwd});
-    if (result is Map) {
-      final thread = result['thread'];
-      if (thread is Map && thread['id'] is String) return thread['id'] as String;
-      if (result['id'] is String) return result['id'] as String;
-    }
-    return null;
+  /// Starts a new thread in [cwd], returning the settings the Host applied.
+  Future<CodexThreadSettings?> startThread(String cwd, {String? model, String? permissionPreset}) async {
+    final result = await _call('thread/start', {'cwd': cwd, 'model': ?model, 'permissionPreset': ?permissionPreset});
+    return CodexThreadSettings._parse(result);
   }
 
-  /// Loads an existing thread before starting a turn on a cold connection.
-  Future<void> resumeThread(String threadId) async {
-    await _call('thread/resume', {'threadId': threadId});
+  /// Loads an existing thread or applies an explicit permission change.
+  Future<CodexThreadSettings> resumeThread(String threadId, {String? model, String? permissionPreset}) async {
+    final result = await _call('thread/resume', {
+      'threadId': threadId,
+      'model': ?model,
+      'permissionPreset': ?permissionPreset,
+    });
+    final settings = CodexThreadSettings._parse(result, expectedThreadId: threadId);
+    if (settings == null) throw const DshProtocolException('thread/resume: invalid settings response');
+    return settings;
+  }
+
+  /// Detaches this Remote client from the thread through the Host.
+  Future<void> unsubscribeThread(String threadId) async {
+    await _call('thread/unsubscribe', {'threadId': threadId});
   }
 
   /// Stops the running turn.
@@ -419,6 +514,7 @@ class CodexHistory {
     this.activeTurnId,
     this.model,
     this.reasoningEffort,
+    this.permissionPreset,
   });
 
   final List<CodexMessage> messages;
@@ -432,6 +528,7 @@ class CodexHistory {
   final String? activeTurnId;
   final String? model;
   final String? reasoningEffort;
+  final String? permissionPreset;
 
   /// Pass this as `beforeSeq` to load the preceding page.
   int? get oldestSeq => records.firstOrNull?.seq;
@@ -449,6 +546,7 @@ class CodexHistory {
       }
     }
     final header = result['header'];
+    final preset = result['permissionPreset'];
     return CodexHistory(
       messages: records.map(CodexMessage._fromEvent).nonNulls.toList(growable: false),
       records: records,
@@ -459,6 +557,11 @@ class CodexHistory {
       activeTurnId: _nonEmptyString(result['activeTurnId']),
       model: header is Map ? _nonEmptyString(header['model']) : null,
       reasoningEffort: header is Map ? _nonEmptyString(header['reasoningEffort']) : null,
+      permissionPreset: switch (preset) {
+        'workspace-write' => 'workspace-write',
+        'danger-full-access' => 'danger-full-access',
+        _ => null,
+      },
     );
   }
 

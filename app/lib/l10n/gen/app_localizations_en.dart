@@ -20255,6 +20255,16 @@ class L10nEn extends L10n {
   String get stateChatWriterHeld => 'This chat is in use elsewhere';
 
   @override
+  String get stateCodexThreadBusy =>
+      'This Codex chat is in use on a computer or another client. End the task and close the chat, or quit desktop Codex if needed, then try again.';
+
+  @override
+  String get stateCodexContinueOnDesktop => 'Continue on desktop';
+
+  @override
+  String get stateCodexDesktopLinkCopied => 'Link copied. Open it on the computer that runs this Codex chat.';
+
+  @override
   String get stateChatModelUnavailable => 'This model is unavailable';
 
   @override

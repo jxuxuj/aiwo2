@@ -35342,6 +35342,24 @@ abstract class L10n {
   /// **'这个对话正在别处使用'**
   String get stateChatWriterHeld;
 
+  /// No description provided for @stateCodexThreadBusy.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个 Codex 对话正在电脑或另一客户端使用。请先结束任务并关闭对应对话，必要时完全退出桌面 Codex，再重试。'**
+  String get stateCodexThreadBusy;
+
+  /// No description provided for @stateCodexContinueOnDesktop.
+  ///
+  /// In zh, this message translates to:
+  /// **'在桌面继续'**
+  String get stateCodexContinueOnDesktop;
+
+  /// No description provided for @stateCodexDesktopLinkCopied.
+  ///
+  /// In zh, this message translates to:
+  /// **'已复制链接，可在运行这个 Codex 会话的电脑上打开。'**
+  String get stateCodexDesktopLinkCopied;
+
   /// No description provided for @stateChatModelUnavailable.
   ///
   /// In zh, this message translates to:

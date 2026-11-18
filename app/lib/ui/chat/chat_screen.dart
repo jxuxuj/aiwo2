@@ -71,6 +71,7 @@ import '../common/sheet_title_bar.dart';
 import '../common/smooth_size.dart';
 import '../common/status_dot.dart';
 import '../features/all_features_page.dart';
+import '../features/feature_format.dart' show permissionName;
 import '../features/session_export_page.dart';
 import '../onboarding/local_install.dart';
 import '../pets/pet_perch.dart';
@@ -98,6 +99,7 @@ import 'composer.dart';
 import 'composer_toast.dart';
 import 'dock/chat_dock.dart';
 import 'dock/dock_stack.dart';
+import 'empty_actions.dart' show QuietChip;
 import 'empty_state.dart';
 import 'new_chat_options.dart';
 import 'media/generate_mode.dart';
@@ -114,6 +116,7 @@ import 'usage_sheet.dart';
 import 'voice/voice_controller.dart';
 import 'widgets/activity_strip.dart';
 import 'widgets/attachments.dart';
+import 'widgets/codex_permission_sheet.dart';
 import 'widgets/notice_row.dart';
 import 'widgets/permission_pill.dart';
 import 'widgets/plus_panel.dart';
@@ -692,6 +695,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       if (cwd == null) return null;
     }
     final newDraftKey = _draftKey;
+    final model = ref.read(_pendingModel);
+    final permission = ref.read(pendingCodexNewChatModesProvider).permission;
+    if (model != null && !isValidModelSelection(ref.read(currentCodexModelCatalogProvider), model)) {
+      setState(() => _localError = appL10n.engineNewChatDefaultsSelectionUnavailable);
+      return null;
+    }
     final attempt = Object();
     bool ownsCreation() => identical(_creating, attempt) && isCurrent();
     setState(() {
@@ -699,17 +708,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       _localError = null;
     });
     try {
-      final threadId = await CodexClient(client.carrier).startThread(cwd);
+      final settings = await CodexClient(client.carrier)
+          .startThread(cwd, model: model?.model, permissionPreset: permission);
       if (!ownsCreation() ||
           _draftKey != newDraftKey ||
           ref.read(currentSessionProvider) != null ||
-          ref.read(selectedCodexCwdProvider) != cwd) {
+          ref.read(selectedCodexCwdProvider) != cwd ||
+          ref.read(_pendingModel) != model ||
+          ref.read(pendingCodexNewChatModesProvider).permission != permission) {
         return null;
       }
-      if (threadId == null || threadId.isEmpty) throw const DshProtocolException('thread/start: missing thread id');
-      final sessionId = codexSessionId(threadId);
+      if (settings == null) throw const DshProtocolException('thread/start: missing thread id');
+      if (permission != null && settings.permissionPreset != permission) {
+        setState(() => _localError = appL10n.featuresSwitchFailed);
+        return null;
+      }
+      final sessionId = codexSessionId(settings.threadId);
       final destination = _draftKeyFor(sessionId);
-      final model = ref.read(_pendingModel);
       _draftKey = destination;
       _saveDraft();
       ref.read(currentSessionProvider.notifier).select(sessionId);
@@ -717,9 +732,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       ref.read(composerQuoteProvider.notifier).move(newDraftKey, destination);
       _draftStore.clear(newDraftKey);
       ref.invalidate(codexWorkspaceProvider);
+      final chat = ref.read(chatProvider(sessionId).notifier);
+      chat.initializeCodexThread(settings);
       if (model != null) {
         ref.read(_pendingModel.notifier).select(null);
-        if (!await ref.read(chatProvider(sessionId).notifier).setModel(model)) return null;
+        if (!await chat.setModel(model)) return null;
+      }
+      if (permission != null) {
+        ref.read(pendingCodexNewChatModesProvider.notifier).clear();
       }
       return ownsCreation() && ref.read(currentSessionProvider) == sessionId ? sessionId : null;
     } catch (e) {
@@ -1803,6 +1823,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                 question: s.questions.firstOrNull,
                 singleQuestion: s.singleQuestion != null,
                 model: s.model,
+                codexPermission: s.codexPermission,
                 error: s.error,
                 syncError: s.syncError,
                 defaultModelSaveFailed: s.defaultModelSaveFailed,
@@ -1955,13 +1976,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     // shows (read only; a phone on its side typing folds both away).
     final running = chat?.running ?? false;
     final pillsBesideStrip = sessionId != null && running && !typing;
-    final pillsInCapsules = !readOnly && !running && !typing;
-    final composerPills = _composerPills(
-      sessionId,
-      autoApprove: chat?.autoApprove ?? false,
-      generate: readOnly ? null : generate,
-      risk: !pillsBesideStrip,
-    );
+    final pillsInCapsules = !_codex && !readOnly && !running && !typing;
+    final composerPills = _codex
+        ? connected && !typing
+              ? _codexPermissionPill(
+                  sessionId,
+                  sessionId == null
+                      ? ref.watch(pendingCodexNewChatModesProvider).permission ?? codexDefaultPermissionPreset
+                      : chat?.codexPermission,
+                )
+              : null
+        : _composerPills(
+            sessionId,
+            autoApprove: chat?.autoApprove ?? false,
+            generate: readOnly ? null : generate,
+            risk: !pillsBesideStrip,
+          );
     final headerHeight = typing ? MediaQuery.paddingOf(context).top + AppSpace.sm : ChatHeader.heightOf(context);
 
     Widget backdrop(Widget child) {
@@ -2460,12 +2490,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     return UiTrace(scope: 'chat', child: screen);
   }
 
+  Widget _codexPermissionPill(String? sessionId, String? preset) {
+    void open() => unawaited(showCodexPermissionSheet(context, sessionId));
+    if (preset == 'danger-full-access') return PermissionPill(preset: 'danger-full-access', onTap: open);
+    final l10n = context.l10n;
+    final label = preset == null ? l10n.featuresPermissions : permissionName(preset);
+    return QuietChip(
+      label: label,
+      icon: AppIcons.permissions,
+      trailing: AppIcons.disclosure,
+      onTap: open,
+      semanticsLabel: l10n.nearbyPermissionPill(label),
+    );
+  }
+
   /// What sits on the composer's top-left edge: 「自动允许中 ×」 while this
   /// client allows everything, else 「⚠ 完全权限 ›」 for a conversation looser
   /// than 工作区内修改 (unless [risk] is false: they are beside the activity
   /// strip), then the generation mode's capsule; nothing otherwise.
   Widget? _composerPills(String? sessionId, {required bool autoApprove, GenerateParams? generate, bool risk = true}) {
-    if (_codex) return null;
     final capsule = generate == null
         ? null
         : GenerateCapsule(params: generate, onTap: () => _openGenerateSheet(generate), onExit: _exitGenerate);

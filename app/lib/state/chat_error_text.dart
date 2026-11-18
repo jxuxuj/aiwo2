@@ -12,6 +12,7 @@ String chatErrorText(Object error, {required String action}) {
     DshRemoteException(:final code) => switch (code) {
       'session/agent-busy' => appL10n.stateChatAgentBusy,
       'session/writer-held' => appL10n.stateChatWriterHeld,
+      'CODEX_THREAD_BUSY' => appL10n.stateCodexThreadBusy,
       'session/model-unavailable' || 'session/provider-models-unavailable' => appL10n.stateChatModelUnavailable,
       'session/attachment-invalid' => appL10n.stateChatAttachmentInvalid,
       'session/fork-unavailable' => appL10n.stateChatForkUnavailable,

@@ -479,7 +479,11 @@ class _ModelSheetState extends ConsumerState<_ModelSheet> {
     final next = ModelSelection(
       provider: model.provider,
       model: model.id,
-      reasoningEffort: supported ? keep : startingEffort(model),
+      reasoningEffort: supported
+          ? keep
+          : widget.codex
+          ? model.defaultEffort
+          : startingEffort(model),
     );
     setState(() {
       _selection = next;
@@ -488,13 +492,22 @@ class _ModelSheetState extends ConsumerState<_ModelSheet> {
     if (!widget.confirmSelection) widget.onSelected(next);
   }
 
-  void _pickEffort(String effort) {
+  ModelSelection? _selectedModel(ModelCatalog? catalog) =>
+      _selection ?? (widget.codex ? catalog?.defaultSelection : null);
+
+  void _pickEffort(String choice) {
+    final effort = choice.isEmpty ? null : choice;
     final view = ref.read(_listProvider);
     if (!_active || view.readOnly) return;
-    final current = _selection;
+    final current = _selectedModel(view.value);
     if (current == null) return;
     final available = findModel(view.value, current);
-    if (available == null || !available.efforts.any((entry) => entry.id == effort)) return;
+    if (available == null ||
+        (effort == null
+            ? !widget.codex || available.defaultEffort != null
+            : !available.efforts.any((entry) => entry.id == effort))) {
+      return;
+    }
     final next = ModelSelection(provider: current.provider, model: current.model, reasoningEffort: effort);
     setState(() => _selection = next);
     if (widget.confirmSelection) return;
@@ -551,7 +564,7 @@ class _ModelSheetState extends ConsumerState<_ModelSheet> {
               );
       } else {
         picking = true;
-        body = _picker(groups, findModel(catalog, _selection), readOnly: view.readOnly || !active);
+        body = _picker(groups, findModel(catalog, _selectedModel(catalog)), readOnly: view.readOnly || !active);
       }
     }
 
@@ -602,6 +615,16 @@ class _ModelSheetState extends ConsumerState<_ModelSheet> {
     final shownId = _channel ?? selected?.provider;
     final shown = groups.firstWhere((g) => g.id == shownId, orElse: () => groups.first);
     final efforts = selected?.efforts ?? const <ReasoningEffort>[];
+    final segments = <PillSegment<String>>[
+      if (widget.codex && efforts.isNotEmpty && selected?.defaultEffort == null) PillSegment('', appL10n.commonDefault),
+      for (final effort in efforts) PillSegment(effort.id, effortLabel(effort.id, effort.name)),
+    ];
+    final pickedEffort = _selection?.reasoningEffort;
+    final currentEffort = widget.codex
+        ? efforts.any((entry) => entry.id == pickedEffort)
+              ? pickedEffort
+              : selected?.defaultEffort
+        : pickedEffort ?? selected?.defaultEffort ?? efforts.firstOrNull?.id;
     final quick = AppMotion.of(context, AppMotion.quick);
     const inset = SheetTitleBar.inset;
 
@@ -647,7 +670,7 @@ class _ModelSheetState extends ConsumerState<_ModelSheet> {
             duration: quick,
             layoutBuilder: (current, previous) =>
                 Stack(alignment: Alignment.topCenter, children: [...previous, ?current]),
-            child: efforts.length < 2
+            child: segments.length < 2
                 ? const SizedBox(key: ValueKey('none'), width: double.infinity)
                 : Column(
                     key: const ValueKey('effort'),
@@ -660,15 +683,13 @@ class _ModelSheetState extends ConsumerState<_ModelSheet> {
                         padding: const EdgeInsets.symmetric(horizontal: inset),
                         child: SegmentedPill<String>(
                           height: 40,
-                          segments: [for (final e in efforts) PillSegment(e.id, effortLabel(e.id, e.name))],
-                          selected: _selection?.reasoningEffort ?? selected?.defaultEffort ?? efforts.first.id,
+                          segments: segments,
+                          selected: currentEffort ?? '',
                           onChanged: readOnly
                               ? null
                               : (effort) {
-                                  if (identical(
-                                    findModel(ref.read(_listProvider).value, _selection),
-                                    selected,
-                                  )) {
+                                  final catalog = ref.read(_listProvider).value;
+                                  if (identical(findModel(catalog, _selectedModel(catalog)), selected)) {
                                     _pickEffort(effort);
                                   }
                                 },

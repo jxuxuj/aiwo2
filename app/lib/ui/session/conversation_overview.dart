@@ -3,6 +3,7 @@
 
 import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
@@ -15,6 +16,7 @@ import '../../state/session_search.dart' show folderLabel;
 import '../../state/sessions_state.dart';
 import '../../plugins/native/native_state.dart';
 import '../chat/model_sheet.dart';
+import '../common/brief_notice.dart';
 import '../plugins/native/native_taps.dart' show runNativeAction;
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
@@ -85,6 +87,23 @@ class ConversationOverview extends ConsumerWidget {
           onTap: readOnly ? null : () => _pickModel(context, ref, effective),
         ),
         _Row(icon: AppIcons.remoteHosts, label: l10n.shellPanelHost, value: host ?? l10n.commonThisPhone),
+        if (codexDesktopThreadLink(sessionId) case final link?)
+          _Row(
+            icon: AppIcons.link,
+            label: l10n.stateCodexContinueOnDesktop,
+            value: 'Codex Desktop',
+            onTap: () async {
+              final chat = ref.read(chatProvider(sessionId).notifier);
+              final released = await chat.releaseCodexForDesktop();
+              if (!context.mounted) return;
+              if (!released) {
+                showBriefNotice(context, ref.read(chatProvider(sessionId)).error ?? l10n.commonNotConnected);
+                return;
+              }
+              await Clipboard.setData(ClipboardData(text: link.toString()));
+              if (context.mounted) showBriefNotice(context, l10n.stateCodexDesktopLinkCopied);
+            },
+          ),
         // What plugins can do to this conversation, each signed with whose it is.
         if (!codex)
           for (final action in ref.watch(nativeSessionActionsProvider))

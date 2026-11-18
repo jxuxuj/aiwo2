@@ -4,6 +4,11 @@ final _codexThreadModelsProvider = Provider((ref) => <(HostRef, String), ModelSe
 
 typedef _CodexConnection = ({HostRef host, DshClient client, MuxGeneration? generation});
 
+DshClient? _readyCodexClient(AsyncValue<HostConnection?> active) {
+  final connection = active.isLoading ? null : active.asData?.value;
+  return connection == null || connection.isLocal ? null : connection.client;
+}
+
 /// Supplies native chat state from the connected Host's Codex thread.
 mixin _CodexChat on Notifier<ChatState> {
   String get sessionId;
@@ -23,10 +28,23 @@ mixin _CodexChat on Notifier<ChatState> {
   Future<bool>? _codexRefresh;
   ({String text, int imageCount, int afterSeq, DateTime expires})? _codexEcho;
   bool _codexSending = false;
+  String? _codexPermission;
+  Object? _codexThreadAction;
+  int _codexPermissionRevision = 0;
+
+  // The Host can synthesize a permission reply for a blank, unmaterialized
+  // thread. Its actual sandbox was selected in thread/start in that case.
+  bool get _canSetCodexPermission =>
+      _codexConnection != null &&
+      _codexCursor >= 0 &&
+      _activeCodexTurn == null &&
+      _codexEcho == null &&
+      !_codexSending &&
+      _codexThreadAction == null;
 
   ChatState _buildCodex() {
     final host = ref.watch(activeHostProvider);
-    final client = ref.watch(activeConnectionProvider.select((value) => value.asData?.value?.client));
+    final client = ref.watch(activeConnectionProvider.select(_readyCodexClient));
     if (_codexHost != host) {
       _codexHost = host;
       _codexTranscript = ChatTranscript();
@@ -37,11 +55,13 @@ mixin _CodexChat on Notifier<ChatState> {
       _codexHasMore = false;
       _activeCodexTurn = null;
       _codexEcho = null;
+      _codexPermission = null;
     }
     final owner = _codexOwner = Object();
     _codexConnection = client == null ? null : (host: host, client: client, generation: client.mux.generation);
     _codexRefresh = null;
     _codexSending = false;
+    _codexThreadAction = null;
     if (client != null) {
       Timer? poll;
       void startPolling() {
@@ -85,6 +105,8 @@ mixin _CodexChat on Notifier<ChatState> {
       turns: _codexTranscript.turns,
       title: title,
       model: ref.read(_codexThreadModelsProvider)[(host, sessionId)],
+      codexPermission: _codexPermission,
+      codexPermissionEditable: _canSetCodexPermission,
       running: _activeCodexTurn != null,
       hasMoreHistory: _codexHasMore,
       loading: client != null && _codexHeader == null,
@@ -96,7 +118,7 @@ mixin _CodexChat on Notifier<ChatState> {
       identical(_codexOwner, owner) &&
       _codexConnection == connection &&
       ref.read(activeHostProvider) == connection.host &&
-      identical(ref.read(activeConnectionProvider).asData?.value?.client, connection.client) &&
+      identical(_readyCodexClient(ref.read(activeConnectionProvider)), connection.client) &&
       identical(connection.client.mux.generation, connection.generation);
 
   Future<bool> _refreshCodex() async {
@@ -114,9 +136,13 @@ mixin _CodexChat on Notifier<ChatState> {
   }
 
   Future<bool> _readCodex(Object? owner, _CodexConnection connection) async {
+    final permissionRevision = _codexPermissionRevision;
     try {
       final page = await CodexClient(connection.client.carrier).readHistory(_threadId);
       if (!_ownsCodex(owner, connection)) return false;
+      if (permissionRevision == _codexPermissionRevision && _codexThreadAction == null) {
+        _codexPermission = page.permissionPreset ?? _codexPermission;
+      }
       final oldest = _codexTranscript.oldestSeq;
       final hadOlder = oldest != null && page.oldestSeq != null && oldest < page.oldestSeq!;
       final nextCursor = page.cursor ?? page.records.lastOrNull?.seq ?? -1;
@@ -149,7 +175,9 @@ mixin _CodexChat on Notifier<ChatState> {
       }
       final model =
           ref.read(_codexThreadModelsProvider)[(connection.host, sessionId)] ??
-          (page.model == null ? null : ModelSelection(provider: 'codex', model: page.model!));
+          (page.model == null
+              ? null
+              : ModelSelection(provider: 'codex', model: page.model!, reasoningEffort: page.reasoningEffort));
       final running = _activeCodexTurn != null || _codexEcho != null;
       final stopping = state.stopping && _activeCodexTurn != null;
       if (changed ||
@@ -158,6 +186,8 @@ mixin _CodexChat on Notifier<ChatState> {
           state.running != running ||
           state.stopping != stopping ||
           state.hasMoreHistory != _codexHasMore ||
+          state.codexPermission != _codexPermission ||
+          state.codexPermissionEditable != _canSetCodexPermission ||
           (model != null && state.model != model) ||
           !identical(state.pending, pending)) {
         _publishCodex(model: model, pending: pending, clearSyncError: true, stopping: stopping);
@@ -216,6 +246,8 @@ mixin _CodexChat on Notifier<ChatState> {
       turns: _codexTranscript.turns,
       title: title ?? state.title,
       model: model ?? state.model,
+      codexPermission: _codexPermission,
+      codexPermissionEditable: _canSetCodexPermission,
       running: _activeCodexTurn != null || _codexEcho != null,
       stopping: stopping ?? state.stopping,
       pending: pending ?? state.pending,
@@ -253,9 +285,93 @@ mixin _CodexChat on Notifier<ChatState> {
   bool _selectCodexModel(ModelSelection selection) {
     final connection = _codexConnection;
     if (connection == null || selection.provider != 'codex') return false;
+    if (!isValidModelSelection(ref.read(currentCodexModelCatalogProvider), selection)) {
+      state = state.copyWith(error: appL10n.engineNewChatDefaultsSelectionUnavailable);
+      return false;
+    }
     ref.read(_codexThreadModelsProvider)[(connection.host, sessionId)] = selection;
     state = state.copyWith(model: selection, clearError: true);
     return true;
+  }
+
+  void _initializeCodexThread(CodexThreadSettings settings) {
+    if (settings.threadId != _threadId) return;
+    _codexPermission = settings.permissionPreset;
+    _codexPermissionRevision++;
+    _publishCodex();
+  }
+
+  Future<bool> _setCodexPermission(String preset) async {
+    final owner = _codexOwner;
+    final connection = _codexConnection;
+    if (connection == null || !_ownsCodex(owner, connection) || !codexPermissionPresets.contains(preset)) return false;
+    if (!_canSetCodexPermission) return false;
+    final change = _codexThreadAction = Object();
+    _codexPermissionRevision++;
+    state = state.copyWith(codexPermissionEditable: false, clearError: true);
+    bool current() => identical(_codexThreadAction, change) && _ownsCodex(owner, connection);
+    try {
+      final reply = await CodexClient(connection.client.carrier).resumeThread(_threadId, permissionPreset: preset);
+      if (!current()) return false;
+      _codexPermission = reply.permissionPreset ?? _codexPermission;
+      if (reply.permissionPreset != preset) {
+        state = state.copyWith(error: appL10n.featuresSwitchFailed);
+        return false;
+      }
+      return true;
+    } catch (error) {
+      if (current()) state = state.copyWith(error: chatErrorText(error, action: appL10n.featuresSwitchFailed));
+      return false;
+    } finally {
+      if (identical(_codexThreadAction, change)) {
+        _codexThreadAction = null;
+        _codexPermissionRevision++;
+        if (_ownsCodex(owner, connection)) _publishCodex();
+      }
+    }
+  }
+
+  Future<bool> _releaseCodexForDesktop() async {
+    if (!ref.mounted || ref.read(currentSessionProvider) != sessionId) return false;
+    final owner = _codexOwner;
+    final connection = _codexConnection;
+    if (connection == null) {
+      state = state.copyWith(error: appL10n.chatDisconnected);
+      return false;
+    }
+    if (!_ownsCodex(owner, connection)) return false;
+    if (state.running || state.pending.isNotEmpty || _codexSending || _codexThreadAction != null) {
+      state = state.copyWith(error: appL10n.stateChatAgentBusy);
+      return false;
+    }
+    final release = _codexThreadAction = Object();
+    state = state.copyWith(codexPermissionEditable: false, clearError: true);
+    bool current() =>
+        _ownsCodex(owner, connection) &&
+        identical(_codexThreadAction, release) &&
+        ref.read(currentSessionProvider) == sessionId;
+    try {
+      final synced = await _refreshCodex();
+      if (!current()) return false;
+      if (!synced) {
+        state = state.copyWith(error: state.syncError ?? appL10n.featuresSwitchFailed);
+        return false;
+      }
+      if (state.running || state.pending.isNotEmpty) {
+        state = state.copyWith(error: appL10n.stateChatAgentBusy);
+        return false;
+      }
+      await CodexClient(connection.client.carrier).unsubscribeThread(_threadId);
+      return current();
+    } catch (error) {
+      if (current()) state = state.copyWith(error: chatErrorText(error, action: appL10n.featuresSwitchFailed));
+      return false;
+    } finally {
+      if (identical(_codexThreadAction, release)) {
+        _codexThreadAction = null;
+        if (_ownsCodex(owner, connection)) _publishCodex();
+      }
+    }
   }
 
   Future<bool> _sendCodex(
@@ -268,7 +384,11 @@ mixin _CodexChat on Notifier<ChatState> {
   ) async {
     final owner = _codexOwner;
     final connection = _codexConnection;
-    if (connection == null || _codexSending || _codexEcho != null || (text.trim().isEmpty && attachments.isEmpty)) {
+    if (connection == null ||
+        _codexSending ||
+        _codexEcho != null ||
+        _codexThreadAction != null ||
+        (text.trim().isEmpty && attachments.isEmpty)) {
       return false;
     }
     final turnId = _activeCodexTurn;
@@ -278,7 +398,7 @@ mixin _CodexChat on Notifier<ChatState> {
     }
     final requestId = _requestId();
     final body = verbatim ? text : text.trim();
-    final model = state.model?.model;
+    final selection = ref.read(_codexThreadModelsProvider)[(connection.host, sessionId)];
     final images = [
       for (final attachment in attachments)
         if (attachment.isImage) (bytes: attachment.bytes, mediaType: attachment.mediaType!),
@@ -291,6 +411,7 @@ mixin _CodexChat on Notifier<ChatState> {
     _codexSending = true;
     state = state.copyWith(
       pending: [PendingPrompt(requestId: requestId, text: body, time: DateTime.now(), attachments: attachments)],
+      codexPermissionEditable: false,
       clearError: true,
     );
     var accepted = false;
@@ -309,15 +430,17 @@ mixin _CodexChat on Notifier<ChatState> {
           : [if (body.isNotEmpty) body, '${appL10n.stateWorkspaceFilesHint}\n${paths.join('\n')}'].join('\n\n');
       final codex = CodexClient(connection.client.carrier);
       if (_activeCodexTurn == null && _codexCursor >= 0) {
-        await codex.resumeThread(_threadId);
+        final reply = await codex.resumeThread(_threadId, model: selection?.model);
         if (!current()) return false;
+        _codexPermission = reply.permissionPreset ?? _codexPermission;
       }
       final afterSeq = _codexCursor;
       final expected = _activeCodexTurn;
       final newTurn = await codex.sendPrompt(
         _threadId,
         content,
-        model: model,
+        model: selection?.model,
+        reasoningEffort: selection?.reasoningEffort,
         images: images,
         expectedTurnId: expected,
       );
@@ -345,7 +468,7 @@ mixin _CodexChat on Notifier<ChatState> {
     } finally {
       if (identical(_codexOwner, owner)) {
         _codexSending = false;
-        if (!accepted) state = state.copyWith(pending: const []);
+        if (!accepted) _publishCodex(pending: const []);
       }
     }
   }

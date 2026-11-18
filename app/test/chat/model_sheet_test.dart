@@ -202,6 +202,50 @@ void main() {
     expect(shortModelName('DeepSeek'), 'DeepSeek');
   });
 
+  testWidgets('Codex shows and sends only the reasoning choices reported for the model', (tester) async {
+    const catalog = ModelCatalog(
+      defaultSelection: ModelSelection(provider: 'codex', model: 'host-model', reasoningEffort: 'low'),
+      routableProviders: ['codex'],
+      groups: [
+        ProviderGroup('codex', 'Codex', [
+          ModelInfo(
+            provider: 'codex',
+            id: 'host-model',
+            name: 'Host model',
+            efforts: [_low, _high],
+            defaultEffort: 'low',
+          ),
+        ]),
+      ],
+      failures: [],
+    );
+    final picks = <ModelSelection>[];
+    usePhoneView(tester);
+    await tester.pumpWidget(
+      testApp(
+        Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () => showModelSheet(context, current: null, codex: true, onSelected: picks.add),
+              child: const Text('Open Codex models'),
+            ),
+          ),
+        ),
+        overrides: [..._harness(testCatalog).overrides, codexModelCatalogProvider.overrideWith((ref) async => catalog)],
+      ),
+    );
+    await pumpFrames(tester, 4);
+    await tester.tap(find.text('Open Codex models'));
+    await pumpFrames(tester, 8);
+    final control = tester.widget<SegmentedPill<String>>(find.byType(SegmentedPill<String>));
+    expect(control.segments.map((segment) => segment.value), ['low', 'high']);
+    expect(control.selected, 'low');
+    await tester.tap(find.text('高'));
+    await pumpFrames(tester, 8);
+    expect(picks.single.model, 'host-model');
+    expect(picks.single.reasoningEffort, 'high');
+  });
+
   group('behaviour', () {
     testWidgets('one channel: a label, no filter; cards and efforts', (tester) async {
       await _openSheet(tester, _harness(testCatalog));
