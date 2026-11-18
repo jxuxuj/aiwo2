@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../remote/codex/codex_client.dart';
 import '../../state/backend_state.dart';
+import '../../state/codex_state.dart';
+import '../../state/connection_state.dart';
+import 'codex_thread_page.dart';
 
 /// A static Codex workspace for the shell. Real data is wired later; this is
 /// the shape the drawer renders so the layout can be judged first.
@@ -40,14 +44,84 @@ class CodexHome extends ConsumerStatefulWidget {
 
 class _CodexHomeState extends ConsumerState<CodexHome> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+  final _controller = TextEditingController();
   String _model = _models.first.$1;
   int _filter = 0;
+  bool _sending = false;
 
   static const _filters = ['全部', '运行中', '待确认', '未读'];
 
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   void _notWired(String what) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$what：这是外壳，数据下一步接')),
+      SnackBar(content: Text('$what：这一步还没接')),
+    );
+  }
+
+  CodexClient? get _codex {
+    final client = ref.read(activeConnectionProvider).value?.client;
+    return client == null ? null : CodexClient(client.carrier);
+  }
+
+  /// The workspace a new thread is created in: the first project with a real
+  /// root directory. Codex needs an existing absolute path.
+  String? _newThreadRoot() {
+    final workspaces = ref.read(codexWorkspaceProvider).value ?? const <CodexWorkspace>[];
+    for (final workspace in workspaces) {
+      final root = workspace.root;
+      if (root != null && root.isNotEmpty) return root;
+    }
+    return null;
+  }
+
+  /// Sending from the home opens a fresh Codex thread in the current
+  /// workspace, sends the prompt, then lands on that thread's chat page.
+  Future<void> _send() async {
+    final text = _controller.text.trim();
+    final codex = _codex;
+    if (text.isEmpty || codex == null || _sending) return;
+    final root = _newThreadRoot();
+    if (root == null) {
+      _notWired('没有可用工作区');
+      return;
+    }
+    setState(() => _sending = true);
+    try {
+      final threadId = await codex.startThread(root);
+      if (!mounted) return;
+      if (threadId == null) {
+        _notWired('主机没有返回线程 ID');
+        return;
+      }
+      await codex.sendText(threadId, text);
+      _controller.clear();
+      ref.invalidate(codexWorkspaceProvider);
+      if (!mounted) return;
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => CodexThreadPage(threadId: threadId, title: text.split('\n').first),
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('发送失败：$error')));
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  void _openThread(CodexThread thread) {
+    Navigator.of(context).pop();
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => CodexThreadPage(threadId: thread.id, title: thread.title),
+      ),
     );
   }
 
@@ -131,12 +205,15 @@ class _CodexHomeState extends ConsumerState<CodexHome> {
             key: _scaffoldKey,
             backgroundColor: scheme.surface,
             drawer: _CodexDrawer(
+              workspaces: ref.watch(codexWorkspaceProvider),
               filters: _filters,
               selected: _filter,
               onFilter: (index) {
                 setState(() => _filter = index);
                 Navigator.of(context).pop();
               },
+              onOpenThread: _openThread,
+              onRetry: () => ref.invalidate(codexWorkspaceProvider),
               onClose: () => Navigator.of(context).pop(),
               onSwitch: () => ref.read(backendProvider.notifier).toggle(),
             ),
@@ -208,7 +285,12 @@ class _CodexHomeState extends ConsumerState<CodexHome> {
                       ],
                     ),
                   ),
-                  _Composer(onAttach: _attachSheet, onNotWired: () => _notWired('发消息')),
+                  _Composer(
+                    controller: _controller,
+                    sending: _sending,
+                    onAttach: _attachSheet,
+                    onSend: _send,
+                  ),
                 ],
               ),
             ),
@@ -221,16 +303,22 @@ class _CodexHomeState extends ConsumerState<CodexHome> {
 
 class _CodexDrawer extends StatelessWidget {
   const _CodexDrawer({
+    required this.workspaces,
     required this.filters,
     required this.selected,
     required this.onFilter,
+    required this.onOpenThread,
+    required this.onRetry,
     required this.onClose,
     required this.onSwitch,
   });
 
+  final AsyncValue<List<CodexWorkspace>> workspaces;
   final List<String> filters;
   final int selected;
   final ValueChanged<int> onFilter;
+  final ValueChanged<CodexThread> onOpenThread;
+  final VoidCallback onRetry;
   final VoidCallback onClose;
   final VoidCallback onSwitch;
 
@@ -306,27 +394,59 @@ class _CodexDrawer extends StatelessWidget {
                 ],
               ),
             ),
-            for (final workspace in _fakeWorkspaces) ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(18, 14, 18, 4),
-                child: Text(
-                  workspace.name,
-                  style: theme.textTheme.labelMedium?.copyWith(color: scheme.onSurfaceVariant),
+            ...workspaces.when(
+              loading: () => const [
+                Padding(padding: EdgeInsets.symmetric(vertical: 28), child: Center(child: CircularProgressIndicator())),
+              ],
+              error: (error, _) => [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SelectableText('读取工作区失败\n$error', style: theme.textTheme.bodySmall),
+                      const SizedBox(height: 8),
+                      TextButton(onPressed: onRetry, child: const Text('重试')),
+                    ],
+                  ),
                 ),
-              ),
-              for (final thread in workspace.threads)
-                ListTile(
-                  dense: true,
-                  visualDensity: VisualDensity.compact,
-                  title: Text(thread, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-                      const SnackBar(content: Text('打开线程：这是外壳，数据下一步接')),
-                    );
-                  },
-                ),
-            ],
+              ],
+              data: (groups) => [
+                if (groups.isEmpty)
+                  const Padding(padding: EdgeInsets.all(16), child: Text('这台主机上没有 Codex 工作区')),
+                for (final workspace in groups) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 14, 18, 4),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            workspace.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.labelMedium?.copyWith(color: scheme.onSurfaceVariant),
+                          ),
+                        ),
+                        if (workspace.threads.isNotEmpty)
+                          Text('${workspace.threads.length}', style: theme.textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant)),
+                      ],
+                    ),
+                  ),
+                  if (workspace.threads.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(18, 2, 18, 6),
+                      child: Text('（没有线程）', style: TextStyle(fontSize: 12)),
+                    ),
+                  for (final thread in workspace.threads)
+                    ListTile(
+                      dense: true,
+                      visualDensity: VisualDensity.compact,
+                      title: Text(thread.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      onTap: () => onOpenThread(thread),
+                    ),
+                ],
+              ],
+            ),
             const SizedBox(height: 12),
             const Divider(height: 1),
             ListTile(
@@ -482,10 +602,12 @@ class _SuggestionCard extends StatelessWidget {
 }
 
 class _Composer extends StatelessWidget {
-  const _Composer({required this.onAttach, required this.onNotWired});
+  const _Composer({required this.controller, required this.sending, required this.onAttach, required this.onSend});
 
+  final TextEditingController controller;
+  final bool sending;
   final VoidCallback onAttach;
-  final VoidCallback onNotWired;
+  final VoidCallback onSend;
 
   @override
   Widget build(BuildContext context) {
@@ -498,10 +620,10 @@ class _Composer extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: TextField(
-              readOnly: true,
-              onTap: onNotWired,
+              controller: controller,
               minLines: 1,
               maxLines: 4,
+              textInputAction: TextInputAction.newline,
               decoration: InputDecoration(
                 hintText: '给 Codex 发消息…',
                 filled: true,
@@ -512,7 +634,13 @@ class _Composer extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          IconButton.filled(onPressed: onNotWired, icon: const Icon(Icons.mic), tooltip: '语音'),
+          IconButton.filled(
+            onPressed: sending ? null : onSend,
+            icon: sending
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.send),
+            tooltip: '发送',
+          ),
         ],
       ),
     );
