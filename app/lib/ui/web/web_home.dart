@@ -32,6 +32,7 @@ import '../../links/share_intake.dart';
 import '../../pets/overlay_channel.dart' show petOverlayChannelProvider;
 import '../../pets/pet_overlay_bridge.dart';
 import '../../state/android_features.dart';
+import '../../state/backend_state.dart';
 import '../../state/compose_inbox.dart';
 import '../../state/hosts_state.dart';
 import '../../state/sessions_state.dart';
@@ -82,10 +83,10 @@ class _WebHomeState extends ConsumerState<WebHome> {
     // Something chose a conversation (a notification, a recent shortcut, the
     // banner): the page goes there, once it has been rebuilt for the host.
     ref.listenManual(currentSessionProvider, (_, next) {
-      if (next == null || next == _webSession) return;
+      if (next == null || next == _webSession || !_activeBackend) return;
       _webSession = next;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) unawaited(_link.open(DshWebTarget(sessionId: next)));
+        if (mounted && _activeBackend) unawaited(_link.open(DshWebTarget(sessionId: next)));
       });
     });
     ref.listenManual(webOpenProvider, (_, request) {
@@ -93,8 +94,10 @@ class _WebHomeState extends ConsumerState<WebHome> {
     }, fireImmediately: true);
   }
 
+  bool get _activeBackend => ref.read(backendProvider) == ChatBackend.deepseek;
+
   void _onSession(String? id) {
-    if (id == _webSession) return;
+    if (id == _webSession || !_activeBackend) return;
     _webSession = id;
     ref.read(currentSessionProvider.notifier).select(id);
   }
@@ -141,6 +144,7 @@ class _WebHomeState extends ConsumerState<WebHome> {
 
   /// 切回原生界面: the native home opens on the conversation the page shows.
   Future<void> _toNative() async {
+    if (!_activeBackend) return;
     final id = _webSession;
     if (id != null && ref.read(currentSessionProvider) != id) {
       ref.read(currentSessionProvider.notifier).select(id);
@@ -324,7 +328,9 @@ class _WebEntryHostState extends ConsumerState<WebEntryHost> {
           ),
         );
       case OpenChatEntry(:final host, :final sessionId):
-        if (!mounted || !await DiscardGuard.confirmLeave(context) || !mounted) return;
+        if (!mounted || ref.read(backendProvider) != ChatBackend.deepseek) return;
+        if (!await DiscardGuard.confirmLeave(context) || !mounted) return;
+        if (ref.read(backendProvider) != ChatBackend.deepseek) return;
         final hosts = ref.read(hostsProvider);
         if (host.kind == HostKind.ssh && hosts.loaded && hosts.sshById(host.id) == null) {
           ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(context.l10n.webChatGone)));

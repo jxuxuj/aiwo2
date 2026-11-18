@@ -7,15 +7,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../diagnostics/app_error_log.dart';
 import '../l10n/l10n.dart';
+import '../remote/codex/codex_client.dart';
 import '../usage/usage_stats.dart';
 import 'attachments.dart';
 import 'chat_error_text.dart';
+import 'codex_state.dart';
 import 'connection_state.dart';
 import 'hosts_state.dart';
 import 'models_state.dart';
 import 'notify_state.dart' show appForegroundProvider;
 import 'run_pulse.dart';
 import 'sessions_state.dart';
+
+part 'codex_chat.dart';
 
 /// How a message sent while a turn is running reaches the agent.
 enum SendMode {
@@ -430,12 +434,13 @@ class ChatState {
 }
 
 /// Folds `DshClient.watch(sessionId)` into [ChatState] through [ChatTranscript].
-class ChatController extends Notifier<ChatState> {
+class ChatController extends Notifier<ChatState> with _CodexChat {
   final _interactions = <Object, bool Function()>{};
 
   /// Only conversation screens own interaction leases. Acquiring or regaining
   /// one never replaces the data follow or retires a first message's wait.
   void Function() beginInteraction(bool Function() allowed) {
+    if (_isCodex) return () {};
     final token = Object();
     _interactions[token] = allowed;
     _activateInteraction();
@@ -461,6 +466,7 @@ class ChatController extends Notifier<ChatState> {
 
   ChatController(this.sessionId);
 
+  @override
   final String sessionId;
   final ChatTranscript _transcript = ChatTranscript();
   StreamSubscription<DshEvent>? _sub;
@@ -555,15 +561,16 @@ class ChatController extends Notifier<ChatState> {
 
   /// The loaded durable log and the session header (deliverables, artifacts:
   /// see `artifacts.dart`). [ChatState.turns] changes whenever the log does.
-  Iterable<SessionLogEvent> get events => _transcript.events;
-  SessionHeader? get header => _transcript.header;
+  Iterable<SessionLogEvent> get events => _isCodex ? _codexTranscript.events : _transcript.events;
+  SessionHeader? get header => _isCodex ? _codexTranscript.header : _transcript.header;
 
   /// The last snapshot's projections (permission preset, plan mode: see
   /// `session_modes.dart`); later log events override them.
-  SessionProjections get projections => _transcript.projections;
+  SessionProjections get projections => _isCodex ? _codexTranscript.projections : _transcript.projections;
 
   @override
   ChatState build() {
+    if (_isCodex) return _buildCodex();
     // Session ids and consent belong to one selected Host. A dependency
     // rebuild may reuse this Notifier for an identically named session there.
     // Reconnecting to the same Host keeps the existing conversation consent.
@@ -725,6 +732,7 @@ class ChatController extends Notifier<ChatState> {
   /// A retired page request must not publish a timeout notice for a newer one.
   Future<bool> waitForSync({bool Function()? isCurrent}) async {
     if (isCurrent?.call() == false) return false;
+    if (_isCodex) return _codexConnection != null;
     if (_canControl) return true;
     final owner = ref;
     final client = _client;
@@ -745,6 +753,7 @@ class ChatController extends Notifier<ChatState> {
   /// Reopens the actual follow, even when the mux itself never disconnected.
   /// Deduplicated and bounded; only an applied fresh snapshot is success.
   Future<bool> resync() {
+    if (_isCodex) return _refreshCodex();
     if (_resyncFuture case final existing?) return existing;
     final client = _client;
     if (client == null) return Future.value(false);
@@ -1318,6 +1327,9 @@ class ChatController extends Notifier<ChatState> {
     Future<bool> Function(String requestId)? beforeDeliver,
     bool Function()? deliveryAllowed,
   }) async {
+    if (_isCodex) {
+      return _sendCodex(text, attachments, mode, verbatim, beforeDeliver, deliveryAllowed);
+    }
     final client = _client;
     final trimmed = text.trim();
     if (client == null || (trimmed.isEmpty && attachments.isEmpty)) {
@@ -1698,6 +1710,10 @@ class ChatController extends Notifier<ChatState> {
   /// wakes it with the order unchanged. Resolves to what could not be put
   /// back (the screen returns it to the composer).
   Future<List<PendingPrompt>> cancel() async {
+    if (_isCodex) {
+      await _stopCodex();
+      return const [];
+    }
     final client = _client;
     if (client == null || !_canControl || !state.running || state.stopping) return const [];
     final operation = _ChatOperation(ref, client, _syncScope);
@@ -1924,6 +1940,7 @@ class ChatController extends Notifier<ChatState> {
 
   /// Switches the model for this session (takes effect on the next request).
   Future<bool> setModel(ModelSelection selection) async {
+    if (_isCodex) return _selectCodexModel(selection);
     final owner = ref;
     if (!owner.mounted) return false;
     final client = _client;
@@ -2002,6 +2019,7 @@ class ChatController extends Notifier<ChatState> {
   }
 
   Future<void> loadOlder() async {
+    if (_isCodex) return _loadOlderCodex();
     final client = _client;
     final oldest = _transcript.oldestSeq;
     if (client == null || oldest == null || !_transcript.hasMoreHistory || state.loadingOlder) {

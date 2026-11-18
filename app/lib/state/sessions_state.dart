@@ -9,6 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../companion/companion_state.dart';
 import '../runtime/runtime_state.dart';
+import 'backend_state.dart';
+import 'codex_state.dart';
 import 'connection_state.dart';
 import 'hosts_state.dart';
 import '../runtime/local_paths.dart';
@@ -937,11 +939,16 @@ class CurrentSessionController extends Notifier<String?> {
   /// Something was chosen before the last conversation was read back (新对话
   /// from a share or a launcher shortcut on a cold start): that choice stands.
   bool _touched = false;
+  String? _deepSeekSession;
+  HostRef? _deepSeekSessionHost;
+  final _codexSessions = <HostRef, String>{};
 
   @override
   String? build() {
+    final backend = ref.watch(backendProvider);
+    if (backend == ChatBackend.codex) return _codexSessions[ref.watch(activeHostProvider)];
     _restore();
-    return null;
+    return _deepSeekSessionHost == ref.read(activeHostProvider) ? _deepSeekSession : null;
   }
 
   /// Reopens the conversation that was open when the app was last closed.
@@ -961,22 +968,46 @@ class CurrentSessionController extends Notifier<String?> {
         final saved = jsonDecode(raw);
         if (saved is! Map || saved['host'] != _hostKey(host)) return;
         final id = saved['sessionId'];
-        if (id is String) state = id;
+        if (id is String && codexThreadId(id) == null) _restoreDeepSeek(host, id);
       } else {
         // Old IDs have no host binding. Keep their existing compatibility
         // only when startup actually chose the saved host; a skipped remote
         // must not turn its unbound ID into a local conversation.
-        if (HostRef.decode(prefs.getString(ActiveHostController.prefsKey)) == host) state = legacy;
+        if (legacy != null &&
+            codexThreadId(legacy) == null &&
+            HostRef.decode(prefs.getString(ActiveHostController.prefsKey)) == host) {
+          _restoreDeepSeek(host, legacy);
+        }
       }
     } catch (_) {
       // No preferences backend (tests) or unreadable store: start with a new chat.
     }
   }
 
+  void _restoreDeepSeek(HostRef host, String sessionId) {
+    _deepSeekSessionHost = host;
+    _deepSeekSession = sessionId;
+    state = sessionId;
+  }
+
   void select(String? sessionId) {
+    final host = ref.read(activeHostProvider);
+    if (ref.read(backendProvider) == ChatBackend.codex) {
+      if (sessionId == null) {
+        _codexSessions.remove(host);
+      } else {
+        if (codexThreadId(sessionId) == null) return;
+        _codexSessions[host] = sessionId;
+      }
+      _selectionRevision++;
+      state = sessionId;
+      return;
+    }
+    if (sessionId != null && codexThreadId(sessionId) != null) return;
     _selectionRevision++;
     _touched = true;
-    final host = ref.read(activeHostProvider);
+    _deepSeekSessionHost = host;
+    _deepSeekSession = sessionId;
     ref.read(pendingSessionFolderProvider.notifier).select(null);
     state = sessionId;
     unawaited(_persist(host, sessionId));

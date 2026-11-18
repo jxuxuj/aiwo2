@@ -8,8 +8,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
+import '../../state/backend_state.dart';
+import '../../state/codex_state.dart';
 import '../../state/connection_state.dart';
 import '../../state/drawer_view_state.dart';
+import '../../state/hosts_state.dart';
 import '../../state/sessions_state.dart';
 import '../../state/workspaces_state.dart';
 import '../common/app_sheet.dart';
@@ -36,7 +39,10 @@ class WorkspaceSwitcher extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
-    final ready = ref.watch(workspacesProvider.select((s) => s.ready));
+    final codex = ref.watch(backendProvider) == ChatBackend.codex;
+    final ready = codex
+        ? ref.watch(codexWorkspaceListProvider).asData != null
+        : ref.watch(workspacesProvider.select((s) => s.ready));
     final scope = !ready ? ref.watch(drawerScopeProvider) : null;
     final retained = scope?.readOnly == true ? scope : null;
     if (!ready && retained == null) return const SizedBox(width: double.infinity);
@@ -123,16 +129,31 @@ class WorkspaceSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
-    final workspaces = ref.watch(workspacesProvider.select((s) => s.workspaces));
-    final sections = ref.watch(workspaceSectionsProvider);
+    final backend = ref.watch(backendProvider);
+    final codex = backend == ChatBackend.codex;
+    final host = ref.watch(activeHostProvider);
+    final workspaces = codex
+        ? ref.watch(codexWorkspaceListProvider).asData?.value ?? const []
+        : ref.watch(workspacesProvider.select((s) => s.workspaces));
+    final sections = codex
+        ? [WorkspaceSection(WorkspaceSectionKind.rest, null, workspaces)]
+        : ref.watch(workspaceSectionsProvider);
     final selected = ref.watch(selectedWorkspaceProvider)?.workspaceId;
-    final counts = ref.watch(workspaceCountsProvider);
-    final total = ref.watch(sessionsProvider.select((s) => s.value?.length ?? 0));
+    final counts = codex
+        ? {for (final workspace in workspaces) workspace.workspaceId: workspace.sessionIds.length}
+        : ref.watch(workspaceCountsProvider);
+    final total = codex
+        ? ref.watch(codexSessionListProvider).asData?.value.length ?? 0
+        : ref.watch(sessionsProvider.select((s) => s.value?.length ?? 0));
     final local = ref.watch(activeConnectionProvider.select((c) => c.value?.isLocal ?? true));
-    final prefs = ref.read(workspacePrefsProvider.notifier);
 
     void pick(String? id) {
-      prefs.select(id);
+      if (ref.read(activeHostProvider) != host || ref.read(backendProvider) != backend) return;
+      if (codex) {
+        ref.read(codexWorkspaceSelectionProvider.notifier).select(id);
+      } else {
+        ref.read(workspacePrefsProvider.notifier).select(id);
+      }
       Navigator.of(context).pop();
     }
 
@@ -172,27 +193,28 @@ class WorkspaceSheet extends ConsumerWidget {
                         count: counts[w.workspaceId] ?? 0,
                         selected: selected == w.workspaceId,
                         onTap: () => pick(w.workspaceId),
-                        onLongPress: () => showWorkspaceActions(context, w),
+                        onLongPress: codex ? null : () => showWorkspaceActions(context, w),
                       ),
                   ],
                 ),
-              SheetGroup(
-                margin: margin,
-                children: [
-                  ListPageRow(
-                    icon: AppIcons.newFolder,
-                    title: l10n.remoteWorkspaceAdd,
-                    chevron: false,
-                    onTap: () => Navigator.of(context).pop(_SheetAction.add),
-                  ),
-                  if (workspaces.isNotEmpty)
+              if (!codex)
+                SheetGroup(
+                  margin: margin,
+                  children: [
                     ListPageRow(
-                      icon: AppIcons.configure,
-                      title: l10n.remoteWorkspaceManage,
-                      onTap: () => Navigator.of(context).pop(_SheetAction.manage),
+                      icon: AppIcons.newFolder,
+                      title: l10n.remoteWorkspaceAdd,
+                      chevron: false,
+                      onTap: () => Navigator.of(context).pop(_SheetAction.add),
                     ),
-                ],
-              ),
+                    if (workspaces.isNotEmpty)
+                      ListPageRow(
+                        icon: AppIcons.configure,
+                        title: l10n.remoteWorkspaceManage,
+                        onTap: () => Navigator.of(context).pop(_SheetAction.manage),
+                      ),
+                  ],
+                ),
               const SizedBox(height: 4),
             ],
           ),

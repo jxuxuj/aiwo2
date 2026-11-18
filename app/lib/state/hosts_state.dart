@@ -4,6 +4,9 @@ import 'dart:io' show Platform;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'backend_state.dart';
+
 import 'package:url_launcher/url_launcher.dart';
 
 import '../l10n/l10n.dart';
@@ -353,7 +356,11 @@ class ActiveHostController extends Notifier<HostRef> {
     if (host == state && host.name == state.name) return;
     final changed = host != state;
     state = host;
-    if (changed) ref.read(currentSessionProvider.notifier).select(null);
+    if (changed && ref.read(backendProvider) == ChatBackend.deepseek) {
+      // Codex derives its selection from the active host. The DeepSeek reset
+      // is an imperative update after switching hosts, outside that dependency.
+      ref.container.read(currentSessionProvider.notifier).select(null);
+    }
     unawaited(
       SharedPreferences.getInstance()
           .then((prefs) => prefs.setString(prefsKey, host.encode()))

@@ -17,6 +17,8 @@ import 'package:flutter/services.dart' show TextEditingValue;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../share_code/guest_fs.dart';
+import 'backend_state.dart';
+import 'codex_state.dart';
 import 'connection_state.dart';
 import 'hosts_state.dart';
 import 'sessions_state.dart';
@@ -823,6 +825,7 @@ bool isContentSearchUnsupported(Object error) {
 }
 
 final sessionContentSearchProvider = Provider<SessionContentSearch?>((ref) {
+  if (ref.watch(backendProvider) == ChatBackend.codex) return null;
   final client = ref.watch(
     activeConnectionProvider.select(
       (connection) => connection.isLoading || connection.hasError ? null : connection.value?.client,
@@ -1057,6 +1060,9 @@ SessionSearchView buildSessionSearchView(
 
 final sessionSearchViewProvider = Provider.autoDispose<SessionSearchView>((ref) {
   final state = ref.watch(sessionSearchProvider);
+  if (ref.watch(backendProvider) == ChatBackend.codex) {
+    return buildSessionSearchView(state, sessions: ref.watch(codexSessionListProvider).asData?.value ?? const []);
+  }
   final sessions = ref.watch(sessionsProvider).value ?? const <SessionSummary>[];
   final archived = ref.read(sessionsProvider.notifier).archivedSessions;
   return buildSessionSearchView(state, sessions: sessions, archived: archived);

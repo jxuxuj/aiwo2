@@ -16,7 +16,9 @@ import '../../pets/overlay_channel.dart' show petOverlayChannelProvider;
 import '../../pets/pet_overlay_bridge.dart';
 import '../../state/adaptive_layout_state.dart';
 import '../../state/android_features.dart';
+import '../../state/backend_state.dart';
 import '../../state/drawer_view_state.dart' show drawerSelectionProvider;
+import '../../state/hosts_state.dart' show activeHostProvider;
 import '../../state/quick_panel_state.dart';
 import '../../state/sessions_state.dart' show currentSessionProvider;
 import '../bots/bot_alerts.dart';
@@ -191,8 +193,11 @@ class _HomeShellState extends ConsumerState<HomeShell> with TickerProviderStateM
   }
 
   Future<void> _search() async {
+    final backend = ref.read(backendProvider);
+    final host = ref.read(activeHostProvider);
     final sessionId = await showSessionSearch(context);
     if (sessionId == null || !mounted) return;
+    if (ref.read(backendProvider) != backend || ref.read(activeHostProvider) != host) return;
     ref.read(currentSessionProvider.notifier).select(sessionId);
   }
 
@@ -308,7 +313,9 @@ class _HomeShellState extends ConsumerState<HomeShell> with TickerProviderStateM
         if (mounted) _quickPanel.value = 0;
       });
     }
-    final chat = widget.chatBuilder?.call(_onMenu) ?? ChatScreen(onOpenDrawer: _onMenu, backdrop: false);
+    final backend = ref.watch(backendProvider);
+    final chat =
+        widget.chatBuilder?.call(_onMenu) ?? ChatScreen(key: ValueKey(backend), onOpenDrawer: _onMenu, backdrop: false);
     // The floating pet outside the app hears every pet state.
     ref.listen<void>(petOverlayBridgeProvider, (_, _) {});
     return SafeModeNoticeListener(

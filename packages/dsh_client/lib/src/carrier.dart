@@ -63,6 +63,19 @@ abstract class DshCarrier {
   /// [DshProtocolException], [DshCarrierRefusedException]).
   Future<RpcResult> call(String endpoint, Map<String, Object?> args, {Duration? timeout});
 
+  /// Calls a non-Harness RPC method on the same authenticated link. Carriers
+  /// with no raw RPC channel complete with [UnsupportedError].
+  Future<Object?> rawCall(String method, Object? params, {Duration? timeout}) =>
+      Future<Object?>.error(UnsupportedError('$runtimeType has no raw RPC channel'));
+
+  /// Calls a non-Harness RPC method over a carrier's transfer protocol.
+  ///
+  /// Set [forceChunked] when retrying a read-only call whose response exceeded
+  /// the secure frame limit. The Host executes the read again using a transfer
+  /// even when its request fits inline. Carriers without transfers use [rawCall].
+  Future<Object?> rawCallChunked(String method, Object? params, {Duration? timeout, bool forceChunked = false}) =>
+      rawCall(method, params, timeout: timeout);
+
   /// Opens a fresh physical link for [DshMux].
   ///
   /// Throw [DshHttpException] 401/403 or [DshCarrierRefusedException] when a

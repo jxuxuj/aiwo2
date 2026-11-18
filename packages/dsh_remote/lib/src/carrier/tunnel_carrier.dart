@@ -492,6 +492,24 @@ class RemoteTunnelCarrier extends DshCarrier implements WorkspaceUploadCarrier {
     return result;
   }
 
+  /// Sends a top-level RPC on the authenticated Remote link. Only the method
+  /// name belongs in diagnostics, since arguments may contain prompt content.
+  @override
+  Future<Object?> rawCall(String method, Object? params, {Duration? timeout}) async {
+    final session = await _ensureSession();
+    _tracer?.call(DshTraceEntry('out', 'rpc', {'method': method}));
+    return session.rpc.call(method, params, timeout: timeout ?? callTimeout);
+  }
+
+  /// Uses the Codex transfer protocol for a read with an oversized response.
+  @override
+  Future<Object?> rawCallChunked(String method, Object? params, {Duration? timeout, bool forceChunked = false}) async {
+    final encoded = utf8.encode(jsonEncode(params));
+    if (!forceChunked && encoded.length <= directRemoteCallBytes) return rawCall(method, params, timeout: timeout);
+    final session = await _ensureSession();
+    return _callTransferred(session, method, encoded, timeout, prefix: 'codex.app.transfer');
+  }
+
   /// Host refusals become `{ok: false}`; local deadline/loss become
   /// [DshTransportException] (the call's outcome is unknown: do not blindly
   /// retry mutations).
@@ -528,9 +546,10 @@ class RemoteTunnelCarrier extends DshCarrier implements WorkspaceUploadCarrier {
     RemoteHostSession session,
     String endpoint,
     Uint8List encoded,
-    Duration? timeout,
-  ) async {
-    if (!session.supportsTransfer) {
+    Duration? timeout, {
+    String prefix = 'harness.remote.transfer',
+  }) async {
+    if (prefix == 'harness.remote.transfer' && !session.supportsTransfer) {
       throw RemoteRpcException(
         'FRAME_TOO_LARGE',
         '$endpoint needs a chunked transfer, which this Host does not support.',
@@ -549,7 +568,7 @@ class RemoteTunnelCarrier extends DshCarrier implements WorkspaceUploadCarrier {
     final transferId = uuidV7();
     final totalChunks = (encoded.length + remoteTransferChunkBytes - 1) ~/ remoteTransferChunkBytes;
     try {
-      await rpc.call('harness.remote.transfer.open', {
+      await rpc.call('$prefix.open', {
         'transferId': transferId,
         'totalBytes': encoded.length,
         'totalChunks': totalChunks,
@@ -559,15 +578,13 @@ class RemoteTunnelCarrier extends DshCarrier implements WorkspaceUploadCarrier {
         final end = start + remoteTransferChunkBytes < encoded.length
             ? start + remoteTransferChunkBytes
             : encoded.length;
-        await rpc.call('harness.remote.transfer.chunk', {
+        await rpc.call('$prefix.chunk', {
           'transferId': transferId,
           'index': index,
           'data': base64Encode(Uint8List.sublistView(encoded, start, end)),
         }, timeout: perCall);
       }
-      final committed = asMapOrEmpty(
-        await rpc.call('harness.remote.transfer.commit', {'transferId': transferId}, timeout: perCall),
-      );
+      final committed = asMapOrEmpty(await rpc.call('$prefix.commit', {'transferId': transferId}, timeout: perCall));
       if (committed['kind'] == 'inline') return committed['response'];
       final totalBytes = asInt(committed['totalBytes']);
       final responseChunks = asInt(committed['totalChunks']);
@@ -582,7 +599,7 @@ class RemoteTunnelCarrier extends DshCarrier implements WorkspaceUploadCarrier {
       final out = BytesBuilder(copy: false);
       for (var index = 0; index < responseChunks!; index++) {
         final chunk = asMapOrEmpty(
-          await rpc.call('harness.remote.transfer.read', {'transferId': transferId, 'index': index}, timeout: perCall),
+          await rpc.call('$prefix.read', {'transferId': transferId, 'index': index}, timeout: perCall),
         );
         final data = asString(chunk['data']);
         if (chunk['transferId'] != transferId || chunk['index'] != index || data == null) {
@@ -610,7 +627,7 @@ class RemoteTunnelCarrier extends DshCarrier implements WorkspaceUploadCarrier {
       // UUID is harmless; keep cleanup on this request's original connection.
       unawaited(
         rpc
-            .call('harness.remote.transfer.close', {'transferId': transferId}, timeout: const Duration(seconds: 5))
+            .call('$prefix.close', {'transferId': transferId}, timeout: const Duration(seconds: 5))
             .then((_) {}, onError: (Object _) {}),
       );
     }

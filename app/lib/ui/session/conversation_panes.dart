@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
+import '../../state/codex_state.dart';
 import '../../plugins/native/native_icons.dart';
 import '../../plugins/native/native_model.dart';
 import '../../plugins/native/native_state.dart';
@@ -90,6 +91,7 @@ class ConversationPane {
   /// The side panel's 插件, for [sessionId]: every plugin panel, wherever it asked to be,
   /// each its own; then the web plugins.
   static List<ConversationPane> pluginsFor(WidgetRef ref, String sessionId) {
+    if (codexThreadId(sessionId) != null) return const [];
     final webParts = !ref.watch(chatWebPluginsProvider(sessionId)).isEmpty;
     // The page's tab holds native panels too: those are listed on their own here.
     final pages = ref.watch(sessionPluginPlanProvider(sessionId)).visible.any((item) => item.mode != SeatMode.native);

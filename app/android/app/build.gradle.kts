@@ -49,7 +49,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "io.github.ccch1mneyyy.dsh_app"
+        applicationId = "com.aiwo.dsh"
         // java.nio.file (symlinks while unpacking the rootfs) needs API 26.
         minSdk = 26
         // Target 28 like Termux, so the API 29+ exec restriction on app-private
@@ -130,8 +130,8 @@ android {
             if (hasWholeReleaseKey) signingConfig = signingConfigs.getByName("release")
         }
         release {
-            // Use the release key when configured; local builds without key.properties fall back to debug.
-            signingConfig = signingConfigs.getByName(if (keyProps.isEmpty) "debug" else "release")
+            // CI exports an unsigned release. The existing AIwo key stays on the signing machine.
+            signingConfig = if (keyProps.isEmpty) null else signingConfigs.getByName("release")
             // Ours on top of Flutter's: phone control's privileged process and
             // its TLS libraries are reached by class name (see the file).
             proguardFiles("proguard-rules.pro")

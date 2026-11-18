@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
 import '../../state/models_state.dart';
+import '../../state/read_list_cache.dart' show ReadListView;
 import '../../state/settings_state.dart';
 import '../common/app_sheet.dart';
 import '../common/empty_view.dart';
@@ -62,21 +63,22 @@ String effortLabel(String id, [String? fallback]) => switch (id) {
 /// The model in a phone's open composer: a plain pill beside the +, the same weight as
 /// it, saying what this message goes out with and a tap from changing it.
 class ComposerModelPill extends ConsumerWidget {
-  const ComposerModelPill({super.key, required this.selection, required this.onSelected});
+  const ComposerModelPill({super.key, required this.selection, required this.onSelected, this.codex = false});
 
   final ModelSelection? selection;
   final ValueChanged<ModelSelection> onSelected;
+  final bool codex;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final catalog = ref.watch(currentModelCatalogProvider);
+    final catalog = ref.watch(codex ? currentCodexModelCatalogProvider : currentModelCatalogProvider);
     final effective = selection ?? catalog?.defaultSelection;
     final effort = effective?.reasoningEffort;
     final name = modelShortName(effective, catalog);
-    void open() => showModelSheet(context, current: effective, onSelected: onSelected);
+    void open() => showModelSheet(context, current: effective, onSelected: onSelected, codex: codex);
     return Semantics(
       button: true,
       label: [
@@ -121,12 +123,19 @@ class ComposerModelPill extends ConsumerWidget {
 /// ✦ 和 ⌄。给多宽由顶栏量了再定([ChatHeader]),胶囊自己不猜屏宽:它的
 /// 最小固有宽度是「完整模型名、不带深度」,最大固有宽度是「名字加深度」。
 class ModelChip extends ConsumerWidget {
-  const ModelChip({super.key, required this.selection, required this.onSelected, this.grouped = false});
+  const ModelChip({
+    super.key,
+    required this.selection,
+    required this.onSelected,
+    this.grouped = false,
+    this.codex = false,
+  });
 
   /// 当前生效的选择;null 时显示目录默认值。
   final ModelSelection? selection;
   final ValueChanged<ModelSelection> onSelected;
   final bool grouped;
+  final bool codex;
 
   // The chevron's glyph carries ~4 of its own air on the right: 12 + 0 on
   // the left reads the same as 8 + 4 on the right.
@@ -141,14 +150,14 @@ class ModelChip extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
     final theme = Theme.of(context);
-    final catalog = ref.watch(currentModelCatalogProvider);
+    final catalog = ref.watch(codex ? currentCodexModelCatalogProvider : currentModelCatalogProvider);
     final effective = selection ?? catalog?.defaultSelection;
     final effort = effective?.reasoningEffort;
     final label = modelShortName(effective, catalog);
     final quick = AppMotion.of(context, AppMotion.quick);
     final em = MediaQuery.textScalerOf(context).scale(13);
     final style = theme.textTheme.labelMedium?.copyWith(fontSize: 13);
-    void open() => showModelSheet(context, current: effective, onSelected: onSelected);
+    void open() => showModelSheet(context, current: effective, onSelected: onSelected, codex: codex);
     return GlassSurface(
       tier: GlassTier.chrome,
       stadium: true,
@@ -396,11 +405,13 @@ Future<void> showModelSheet(
   required ModelSelection? current,
   required ValueChanged<ModelSelection> onSelected,
   bool confirmSelection = false,
+  bool codex = false,
 }) {
   return showAppSheet<void>(
     context,
     isScrollControlled: true,
-    builder: (context) => _ModelSheet(current: current, onSelected: onSelected, confirmSelection: confirmSelection),
+    builder: (context) =>
+        _ModelSheet(current: current, onSelected: onSelected, confirmSelection: confirmSelection, codex: codex),
   );
 }
 
@@ -421,11 +432,17 @@ Future<void> showModelSheet(
 ///
 /// 渠道条只是筛选,不改当前选择;打开时停在当前模型所在的渠道。
 class _ModelSheet extends ConsumerStatefulWidget {
-  const _ModelSheet({required this.current, required this.onSelected, required this.confirmSelection});
+  const _ModelSheet({
+    required this.current,
+    required this.onSelected,
+    required this.confirmSelection,
+    required this.codex,
+  });
 
   final ModelSelection? current;
   final ValueChanged<ModelSelection> onSelected;
   final bool confirmSelection;
+  final bool codex;
 
   @override
   ConsumerState<_ModelSheet> createState() => _ModelSheetState();
@@ -436,6 +453,9 @@ class _ModelSheetState extends ConsumerState<_ModelSheet> {
   late final Object _scope = ref.read(modelSelectionScopeProvider);
 
   bool get _active => identical(_scope, ref.read(modelSelectionScopeProvider));
+
+  Provider<ReadListView<ModelCatalog>> get _listProvider =>
+      widget.codex ? codexModelListViewProvider : modelListViewProvider;
 
   /// The channel being browsed; null follows the selected model's.
   String? _channel;
@@ -450,7 +470,7 @@ class _ModelSheetState extends ConsumerState<_ModelSheet> {
   }
 
   void _pickModel(ModelInfo model) {
-    final view = ref.read(modelListViewProvider);
+    final view = ref.read(_listProvider);
     if (!_active || view.readOnly) return;
     final available = findModel(view.value, ModelSelection(provider: model.provider, model: model.id));
     if (available == null || !identical(available, model)) return;
@@ -469,7 +489,7 @@ class _ModelSheetState extends ConsumerState<_ModelSheet> {
   }
 
   void _pickEffort(String effort) {
-    final view = ref.read(modelListViewProvider);
+    final view = ref.read(_listProvider);
     if (!_active || view.readOnly) return;
     final current = _selection;
     if (current == null) return;
@@ -489,8 +509,9 @@ class _ModelSheetState extends ConsumerState<_ModelSheet> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final catalogAsync = ref.watch(modelCatalogProvider);
-    final view = ref.watch(modelListViewProvider);
+    final catalogProvider = widget.codex ? codexModelCatalogProvider : modelCatalogProvider;
+    final catalogAsync = ref.watch(catalogProvider);
+    final view = ref.watch(_listProvider);
     final catalog = view.value;
     final active = identical(_scope, ref.watch(modelSelectionScopeProvider));
 
@@ -505,7 +526,7 @@ class _ModelSheetState extends ConsumerState<_ModelSheet> {
               icon: AppIcons.offline,
               title: l10n.viewModelLoadFailed,
               action: FilledButton.tonal(
-                onPressed: () => ref.invalidate(modelCatalogProvider),
+                onPressed: () => ref.invalidate(catalogProvider),
                 child: Text(l10n.commonRetry),
               ),
             )
@@ -521,11 +542,13 @@ class _ModelSheetState extends ConsumerState<_ModelSheet> {
           if (group.models.isNotEmpty) group,
       ];
       if (groups.isEmpty) {
-        body = _EmptyCatalog(
-          // A failing provider counts: something is set up, just not working.
-          configured: ref.watch(settingsProvider.select((s) => s.hasModelAccess)) || catalog.failures.isNotEmpty,
-          failure: catalog.failures.isEmpty ? null : catalog.failures.first.message,
-        );
+        body = widget.codex
+            ? EmptyView(padding: _emptyPadding, icon: AppIcons.offline, title: l10n.viewModelLoadFailed)
+            : _EmptyCatalog(
+                // A failing provider counts: something is set up, just not working.
+                configured: ref.watch(settingsProvider.select((s) => s.hasModelAccess)) || catalog.failures.isNotEmpty,
+                failure: catalog.failures.isEmpty ? null : catalog.failures.first.message,
+              );
       } else {
         picking = true;
         body = _picker(groups, findModel(catalog, _selection), readOnly: view.readOnly || !active);
@@ -554,7 +577,7 @@ class _ModelSheetState extends ConsumerState<_ModelSheet> {
                   onPressed: !active || view.readOnly || !isValidModelSelection(catalog, _selection)
                       ? null
                       : () {
-                          final currentView = ref.read(modelListViewProvider);
+                          final currentView = ref.read(_listProvider);
                           if (!_active ||
                               currentView.readOnly ||
                               !isValidModelSelection(currentView.value, _selection)) {
@@ -567,7 +590,7 @@ class _ModelSheetState extends ConsumerState<_ModelSheet> {
                 ),
               ),
             // 「管理模型 ›」: 设置 › 模型, over the sheet (back returns here).
-            if (picking) ...[const SizedBox(height: 12), const ManageModelsLink()],
+            if (picking && !widget.codex) ...[const SizedBox(height: 12), const ManageModelsLink()],
           ],
         ),
       ),
@@ -643,7 +666,7 @@ class _ModelSheetState extends ConsumerState<_ModelSheet> {
                               ? null
                               : (effort) {
                                   if (identical(
-                                    findModel(ref.read(modelListViewProvider).value, _selection),
+                                    findModel(ref.read(_listProvider).value, _selection),
                                     selected,
                                   )) {
                                     _pickEffort(effort);

@@ -14,6 +14,7 @@ import '../../state/adaptive_layout_state.dart';
 import '../../state/agents_state.dart';
 import '../../state/app_notes.dart';
 import '../../state/chat_state.dart';
+import '../../state/codex_state.dart';
 import '../../state/session_detail_state.dart';
 import '../../state/usage_state.dart';
 import '../agents/agent_widgets.dart';
@@ -147,12 +148,14 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage> with Tick
   double _heroHeight = 120;
 
   SessionDetailMode get _mode => widget.mode;
+  bool get _codex => codexThreadId(widget.sessionId) != null;
 
   @override
   void initState() {
     super.initState();
     final items = ref.read(chatProvider(widget.sessionId)).items;
-    final delegated = dispatchedSubagents(items) || ref.read(subagentLineageProvider(widget.sessionId)).isNotEmpty;
+    final delegated =
+        !_codex && (dispatchedSubagents(items) || ref.read(subagentLineageProvider(widget.sessionId)).isNotEmpty);
     final SessionTab initial =
         widget.initialTab ??
         (_mode == SessionDetailMode.page ? SessionTab.trajectory : ref.read(sessionDetailTabProvider));
@@ -161,7 +164,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage> with Tick
         if (tab != SessionTab.plugins && (tab != SessionTab.subagents || delegated || initial == SessionTab.subagents))
           tab,
     ];
-    final plugins = !ref.read(sessionPluginPlanProvider(widget.sessionId)).isEmpty;
+    final plugins = !_codex && !ref.read(sessionPluginPlanProvider(widget.sessionId)).isEmpty;
     _tabs = [..._baseTabs, if (plugins) SessionTab.plugins];
     _controller = TabController(
       length: _tabs.length,
@@ -247,7 +250,10 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage> with Tick
             ),
             const SizedBox(width: 8),
             // Mirrors the back button: the title stays centred.
-            GlassIconButton(icon: AppIcons.terminal, tooltip: context.l10n.hubTerminal, onPressed: _openTerminal),
+            if (_codex)
+              const SizedBox(width: 36)
+            else
+              GlassIconButton(icon: AppIcons.terminal, tooltip: context.l10n.hubTerminal, onPressed: _openTerminal),
           ],
         ),
       ),
@@ -278,7 +284,8 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage> with Tick
               ),
             ),
             const SizedBox(width: 8),
-            GlassIconButton(icon: AppIcons.terminal, tooltip: context.l10n.hubTerminal, onPressed: _openTerminal),
+            if (!_codex)
+              GlassIconButton(icon: AppIcons.terminal, tooltip: context.l10n.hubTerminal, onPressed: _openTerminal),
             const SizedBox(width: 8),
             const DetailPanelCollapseKey(),
           ],
@@ -300,7 +307,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage> with Tick
         if (i >= 0 && i != _controller.index) _controller.animateTo(i);
       });
     }
-    _syncPluginsTab(!ref.watch(sessionPluginPlanProvider(widget.sessionId)).isEmpty);
+    _syncPluginsTab(!_codex && !ref.watch(sessionPluginPlanProvider(widget.sessionId)).isEmpty);
     final theme = Theme.of(context);
     final surfaces = DshSurfaces.of(context);
     final padding = MediaQuery.paddingOf(context);
@@ -418,7 +425,13 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage> with Tick
           padding: EdgeInsets.symmetric(horizontal: gutter - 16 + column),
           child: TabBarView(
             controller: _controller,
-            children: [for (final tab in _tabs) ConversationPane.ofTab(tab).build(id)],
+            children: [
+              for (final tab in _tabs)
+                if (_codex && tab == SessionTab.files)
+                  _Empty(l10n.featuresArtifactsNoFiles, icon: AppIcons.files)
+                else
+                  ConversationPane.ofTab(tab).build(id),
+            ],
           ),
         ),
       ),
@@ -443,7 +456,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage> with Tick
         final drag = DetailSheetScope.maybeOf(context)?.dragArea;
         final titleBar = SheetTitleBar(
           l10n.hubSessionDetails,
-          actions: [SheetIconButton(icon: AppIcons.terminal, tooltip: l10n.hubTerminal, onPressed: _openTerminal)],
+          actions: [
+            if (!_codex) SheetIconButton(icon: AppIcons.terminal, tooltip: l10n.hubTerminal, onPressed: _openTerminal),
+          ],
         );
         return Column(
           children: [
@@ -1097,7 +1112,7 @@ class ProgressTab extends ConsumerWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final dsh = DshColors.of(context);
-    final panels = ref.watch(sessionPanelsProvider(sessionId));
+    final panels = codexThreadId(sessionId) != null ? SessionPanels.empty : ref.watch(sessionPanelsProvider(sessionId));
     final logged = ref.watch(chatProvider(sessionId).select((s) => s.todos));
     final todos = panels.todos ?? logged ?? const <TodoItem>[];
     final goal = panels.goal;
@@ -1256,7 +1271,7 @@ class ContextTab extends ConsumerWidget {
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final dsh = DshColors.of(context);
-    final usage = ref.watch(sessionUsageProvider(sessionId));
+    final usage = codexThreadId(sessionId) != null ? SessionUsage.empty : ref.watch(sessionUsageProvider(sessionId));
     final model = ref.watch(chatProvider(sessionId).select((s) => s.model));
     final turns = ref.watch(chatProvider(sessionId).select((s) => s.turns));
     final pricing = model == null ? null : knownPricing['${model.provider}/${model.model}'];
@@ -1348,7 +1363,9 @@ class SubagentsTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
     final dsh = DshColors.of(context);
-    final nodes = ref.watch(subagentLineageProvider(sessionId));
+    final nodes = codexThreadId(sessionId) != null
+        ? const <SubagentNode>[]
+        : ref.watch(subagentLineageProvider(sessionId));
     final calls = ref
         .watch(
           chatProvider(sessionId).select(

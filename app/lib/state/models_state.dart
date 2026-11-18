@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../remote/codex/codex_client.dart';
 import 'connection_state.dart';
 import 'hosts_state.dart';
 import 'read_list_cache.dart';
@@ -67,6 +68,40 @@ final modelListViewProvider = Provider.autoDispose<ReadListView<ModelCatalog>>((
   );
 });
 
+final codexModelCatalogProvider = FutureProvider.autoDispose<ModelCatalog?>((ref) async {
+  ref.watch(activeHostProvider);
+  final connection = ref.watch(activeConnectionProvider);
+  if (connection.isLoading || connection.hasError) return null;
+  final conn = connection.value;
+  if (conn == null || conn.isLocal) return null;
+  final entries = await CodexClient(conn.client.carrier).listModels();
+  final models = [
+    for (final (id, name) in entries) ModelInfo(provider: 'codex', id: id, name: name),
+  ];
+  return ModelCatalog(
+    defaultSelection: null,
+    routableProviders: models.isEmpty ? const [] : const ['codex'],
+    groups: [ProviderGroup('codex', 'Codex', models)],
+    failures: const [],
+  );
+});
+
+final codexModelListViewProvider = Provider.autoDispose<ReadListView<ModelCatalog>>((ref) {
+  final source = ref.watch(codexModelCatalogProvider);
+  final catalog = source.isLoading || source.hasError ? null : source.value;
+  return ReadListView(
+    value: catalog,
+    readOnly: catalog == null,
+    status: catalog != null
+        ? ReadListStatus.current
+        : source.hasError
+        ? ReadListStatus.failed
+        : source.isLoading
+        ? ReadListStatus.updating
+        : ReadListStatus.offline,
+  );
+});
+
 const defaultModelSettingsNs = 'agent-default-model';
 
 /// A picker belongs to one host/connection lifetime, including same-client
@@ -99,6 +134,10 @@ final currentModelCatalogProvider = Provider<ModelCatalog?>((ref) {
   return view.readOnly ? null : view.value;
 });
 
+final currentCodexModelCatalogProvider = Provider.autoDispose<ModelCatalog?>(
+  (ref) => ref.watch(codexModelListViewProvider).value,
+);
+
 /// Model picked on the new-chat screen before a session exists. Applied to the
 /// session right after it is created, then cleared; never carried to a host
 /// selected later or a new connection generation.
@@ -113,6 +152,8 @@ class PendingModelController extends Notifier<ModelSelection?> {
 }
 
 final pendingModelProvider = NotifierProvider<PendingModelController, ModelSelection?>(PendingModelController.new);
+
+final pendingCodexModelProvider = NotifierProvider<PendingModelController, ModelSelection?>(PendingModelController.new);
 
 /// Catalog entry for the exact provider/model route in [selection].
 /// A same-named model on another provider is not the active selection.

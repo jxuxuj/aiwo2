@@ -19,6 +19,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/l10n.dart';
+import 'backend_state.dart';
+import 'codex_state.dart';
 import 'hosts_state.dart';
 import 'read_list_cache.dart';
 import 'read_list_identity.dart';
@@ -424,6 +426,7 @@ final workspacePrefsProvider = NotifierProvider<WorkspacePrefsController, Worksp
 /// The workspace the drawer shows and new conversations start in; null for
 /// 全部对话 (or while the selection isn't on the host's list).
 final selectedWorkspaceProvider = Provider<Workspace?>((ref) {
+  if (ref.watch(backendProvider) == ChatBackend.codex) return ref.watch(selectedCodexWorkspaceProvider);
   final selected = ref.watch(workspacePrefsProvider.select((p) => p.selected));
   if (selected == null) return null;
   return ref.watch(workspacesProvider).byId(selected);

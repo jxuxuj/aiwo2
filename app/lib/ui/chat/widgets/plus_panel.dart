@@ -94,6 +94,7 @@ Future<PlusChoice?> showPlusPanel(
   bool files = true,
   bool generate = false,
   bool call = false,
+  bool attachmentsOnly = false,
   String? sessionId,
 }) {
   return showAppSheet<PlusChoice>(
@@ -103,7 +104,13 @@ Future<PlusChoice?> showPlusPanel(
       top: false,
       child: SingleChildScrollView(
         child: SheetNavigator(
-          root: (_) => _PlusRoot(files: files, generate: generate, call: call, sessionId: sessionId),
+          root: (_) => _PlusRoot(
+            files: files,
+            generate: generate,
+            call: call,
+            sessionId: sessionId,
+            attachmentsOnly: attachmentsOnly,
+          ),
         ),
       ),
     ),
@@ -125,18 +132,25 @@ Future<void> showPermissionSheet(BuildContext context, String sessionId) {
 }
 
 class _PlusRoot extends ConsumerWidget {
-  const _PlusRoot({required this.files, required this.generate, required this.call, required this.sessionId});
+  const _PlusRoot({
+    required this.files,
+    required this.generate,
+    required this.call,
+    required this.sessionId,
+    required this.attachmentsOnly,
+  });
 
   final bool files;
   final bool generate;
   final bool call;
   final String? sessionId;
+  final bool attachmentsOnly;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
     final sessionId = this.sessionId;
-    final phoneOn = ref.watch(phoneProvider.select((s) => s.status.enabled));
+    final phoneOn = !attachmentsOnly && ref.watch(phoneProvider.select((s) => s.status.enabled));
     final tiles = [
       (AttachChoice(AttachSource.gallery), AppIcons.gallery, l10n.chatGallery, 0),
       (AttachChoice(AttachSource.camera), AppIcons.camera, l10n.chatTakePhoto, 2),
@@ -160,10 +174,11 @@ class _PlusRoot extends ConsumerWidget {
             ],
           ),
         ),
-        const _PluginTools(),
+        if (!attachmentsOnly) const _PluginTools(),
         if (sessionId != null) ...[const SizedBox(height: 16), _ThisChatCard(sessionId: sessionId)],
         if (phoneOn) ...[const SizedBox(height: 24), const _PhoneCard()],
-        if (ref.watch(operatingSystemProvider) == 'ohos' &&
+        if (!attachmentsOnly &&
+            ref.watch(operatingSystemProvider) == 'ohos' &&
             ref.watch(systemActionsProvider.select((s) => s.enabled))) ...[
           const SizedBox(height: 24),
           const _SystemActionsCard(),

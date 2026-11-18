@@ -17,7 +17,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/l10n.dart';
+import 'backend_state.dart';
 import 'bots_state.dart';
+import 'codex_state.dart';
 import 'hosts_state.dart';
 import 'read_list_cache.dart';
 import 'read_list_identity.dart';
@@ -418,14 +420,15 @@ enum DrawerFilter {
 }
 
 class DrawerFilterController extends Notifier<DrawerFilter> {
-  @override
-  DrawerFilter build() {
-    // Another host: back to everything.
-    ref.watch(activeHostProvider);
-    return DrawerFilter.all;
-  }
+  final _filters = <(HostRef, ChatBackend), DrawerFilter>{};
 
-  void set(DrawerFilter filter) => state = filter;
+  @override
+  DrawerFilter build() => _filters[(ref.watch(activeHostProvider), ref.watch(backendProvider))] ?? DrawerFilter.all;
+
+  void set(DrawerFilter filter) {
+    _filters[(ref.read(activeHostProvider), ref.read(backendProvider))] = filter;
+    state = filter;
+  }
 }
 
 final drawerFilterProvider = NotifierProvider<DrawerFilterController, DrawerFilter>(DrawerFilterController.new);
@@ -435,6 +438,7 @@ class DrawerSelectionController extends Notifier<Set<String>?> {
   @override
   Set<String>? build() {
     ref.watch(activeHostProvider);
+    ref.watch(backendProvider);
     return null;
   }
 
@@ -515,6 +519,19 @@ class DrawerScope {
 
 /// Null until the list (and a selected workspace's members) have arrived.
 final drawerScopeProvider = Provider<DrawerScope?>((ref) {
+  if (ref.watch(backendProvider) == ChatBackend.codex) {
+    final list = ref.watch(codexSessionListProvider);
+    final sessions = list.asData?.value;
+    if (sessions == null) return null;
+    final workspace = ref.watch(selectedCodexWorkspaceProvider);
+    final members = workspace?.sessionIds.toSet();
+    return DrawerScope(
+      sessions: members == null ? sessions : sessions.where((session) => members.contains(session.sessionId)).toList(),
+      bots: const [],
+      scoped: members != null,
+      workspaceLabel: workspace?.title,
+    );
+  }
   final sessions = ref.watch(sessionsProvider);
   final all = sessions.value;
   final identity = ref.watch(readListIdentityProvider);
@@ -747,6 +764,22 @@ final drawerClockProvider = Provider<DateTime Function()>((ref) => DateTime.now)
 List<DrawerBlock>? watchDrawerBlocks(WidgetRef ref, {DateTime? now}) {
   final scope = ref.watch(drawerScopeProvider);
   if (scope == null) return null;
+  if (ref.watch(backendProvider) == ChatBackend.codex) {
+    return drawerBlocks(
+      sessions: scope.sessions,
+      pinnedIds: [
+        for (final session in scope.sessions)
+          if (session.raw['isPinned'] == true) session.sessionId,
+      ],
+      view: const DrawerView(loaded: true),
+      filter: ref.watch(drawerFilterProvider),
+      pending: const {},
+      unread: const {},
+      createdAt: const {},
+      now: now ?? ref.watch(drawerClockProvider)(),
+      scoped: scope.scoped,
+    );
+  }
   final view = ref.watch(drawerViewProvider);
   return drawerBlocks(
     sessions: scope.sessions,

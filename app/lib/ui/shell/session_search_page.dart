@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
+import '../../state/backend_state.dart';
+import '../../state/codex_state.dart';
 import '../../state/connection_state.dart';
 import '../../state/hosts_state.dart';
 import '../../state/session_deletion_state.dart';
@@ -32,8 +34,11 @@ class SessionSearchBar extends ConsumerWidget {
   final EdgeInsetsGeometry padding;
 
   Future<void> _open(BuildContext context, WidgetRef ref) async {
+    final backend = ref.read(backendProvider);
+    final host = ref.read(activeHostProvider);
     final sessionId = await showSessionSearch(context);
     if (sessionId == null || !context.mounted) return;
+    if (ref.read(backendProvider) != backend || ref.read(activeHostProvider) != host) return;
     ref.read(currentSessionProvider.notifier).select(sessionId);
     onClose();
   }
@@ -307,7 +312,8 @@ class _SearchBody extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
     final view = ref.watch(sessionSearchViewProvider);
-    final sessions = ref.watch(sessionsProvider);
+    final codex = ref.watch(backendProvider) == ChatBackend.codex;
+    final sessions = codex ? ref.watch(codexSessionListProvider) : ref.watch(sessionsProvider);
     final connected = ref.watch(activeConnectionProvider.select((c) => c.value != null));
     final host = ref.watch(activeHostProvider);
     final hostName = ref.watch(hostNameProvider(host)) ?? (host.isLocal ? l10n.commonThisPhone : l10n.commonRemoteHost);
@@ -323,11 +329,14 @@ class _SearchBody extends ConsumerWidget {
       return _Notice(
         icon: AppIcons.offline,
         title: l10n.shellChatsLoadFailed,
-        action: (l10n.commonRetry, () => ref.read(sessionsProvider.notifier).refresh()),
+        action: (
+          l10n.commonRetry,
+          codex ? () => ref.invalidate(codexWorkspaceProvider) : () => ref.read(sessionsProvider.notifier).refresh(),
+        ),
       );
     }
     if (view.query.isEmpty && !archivedOnly) {
-      final titlesOnly = ref.watch(sessionContentSearchProvider)?.knownUnsupported ?? false;
+      final titlesOnly = codex || (ref.watch(sessionContentSearchProvider)?.knownUnsupported ?? false);
       return _Notice(
         icon: AppIcons.search,
         title: l10n.shellSearchHostChats(hostName),
@@ -336,7 +345,7 @@ class _SearchBody extends ConsumerWidget {
     }
     if (sessions.value == null) return _Notice(icon: AppIcons.loading, title: l10n.shellLoadingChatsEllipsis);
 
-    final archived = ref.read(sessionsProvider.notifier).archivedSessions;
+    final archived = codex ? const <SessionSummary>[] : ref.read(sessionsProvider.notifier).archivedSessions;
     final results = !archivedOnly
         ? view.results
         : SessionSearchResults(

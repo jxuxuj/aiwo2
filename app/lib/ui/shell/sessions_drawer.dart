@@ -15,7 +15,9 @@ import '../../l10n/l10n.dart';
 import '../../runtime/runtime_bridge.dart';
 import '../../runtime/runtime_state.dart';
 import '../../runtime/local_footprint.dart';
+import '../../state/backend_state.dart';
 import '../../state/bots_state.dart';
+import '../../state/codex_state.dart';
 import '../../state/connection_state.dart';
 import '../../state/engine_control.dart';
 import '../../state/hosts_state.dart';
@@ -113,7 +115,11 @@ class SessionsDrawer extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final backend = ref.watch(backendProvider);
+    final codex = backend == ChatBackend.codex;
+
     void newChat() {
+      if (ref.read(backendProvider) != backend) return;
       ref.read(currentSessionProvider.notifier).select(null);
       onClose();
     }
@@ -125,16 +131,20 @@ class SessionsDrawer extends ConsumerWidget {
     }
 
     final selecting =
-        ref.watch(drawerSelectionProvider.select((s) => s != null)) && ref.watch(drawerScopeProvider)?.readOnly != true;
+        !codex &&
+        ref.watch(drawerSelectionProvider.select((s) => s != null)) &&
+        ref.watch(drawerScopeProvider)?.readOnly != true;
     // The drawer stays mounted with the shell: it keeps the unread record
     // following what the person opens and leaves.
-    ref.listen(drawerSeenProvider, (_, _) {});
+    if (!codex) ref.listen(drawerSeenProvider, (_, _) {});
     // Folders forget conversations the host no longer has.
-    ref.listen(sessionsProvider, (_, next) {
-      if (!next.hasValue || next.isLoading) return;
-      final known = {for (final s in ref.read(sessionsProvider.notifier).allSessions) s.sessionId};
-      if (known.isNotEmpty) unawaited(ref.read(drawerViewProvider.notifier).forgetMissing(known));
-    });
+    if (!codex) {
+      ref.listen(sessionsProvider, (_, next) {
+        if (!next.hasValue || next.isLoading) return;
+        final known = {for (final s in ref.read(sessionsProvider.notifier).allSessions) s.sessionId};
+        if (known.isNotEmpty) unawaited(ref.read(drawerViewProvider.notifier).forgetMissing(known));
+      });
+    }
     // Hidden (closed by a tap, a swipe or back): multi-select ends with it.
     if (selecting && !TickerMode.valuesOf(context).enabled) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -167,10 +177,10 @@ class SessionsDrawer extends ConsumerWidget {
                           child: FittedBox(fit: BoxFit.scaleDown, child: BrandLockup(height: 19)),
                         ),
                       ),
-                      // 模式 and 网页模式, quietly: the one solid element stays 新对话.
+                      // Keep both switches quiet, with 新对话 as the solid key.
                       const ModeKey(),
                       const SizedBox(width: 8),
-                      const WebModeKey(tier: GlassTier.pill),
+                      const WebModeKey(tier: GlassTier.pill, switchBackend: true),
                       const SizedBox(width: 8),
                       // When even the lockup's room is not enough, 新对话
                       // keeps its glyph and lets its words go.
@@ -265,7 +275,8 @@ class SessionsDrawer extends ConsumerWidget {
                           ? SelectionActionBar(
                               key: const ValueKey('selecting'),
                               onMove: () {
-                                if (ref.read(drawerScopeProvider)?.readOnly == false) {
+                                if (ref.read(backendProvider) == ChatBackend.deepseek &&
+                                    ref.read(drawerScopeProvider)?.readOnly == false) {
                                   moveToFolderFlow(
                                     context,
                                     ref,
@@ -274,15 +285,20 @@ class SessionsDrawer extends ConsumerWidget {
                                 }
                               },
                               onPin: () {
-                                if (ref.read(drawerScopeProvider)?.readOnly == false) pinSelectionFlow(context, ref);
+                                if (ref.read(backendProvider) == ChatBackend.deepseek &&
+                                    ref.read(drawerScopeProvider)?.readOnly == false) {
+                                  pinSelectionFlow(context, ref);
+                                }
                               },
                               onArchive: () {
-                                if (ref.read(drawerScopeProvider)?.readOnly == false) {
+                                if (ref.read(backendProvider) == ChatBackend.deepseek &&
+                                    ref.read(drawerScopeProvider)?.readOnly == false) {
                                   archiveSelectionFlow(context, ref);
                                 }
                               },
                               onDelete: () {
-                                if (ref.read(drawerScopeProvider)?.readOnly == false) {
+                                if (ref.read(backendProvider) == ChatBackend.deepseek &&
+                                    ref.read(drawerScopeProvider)?.readOnly == false) {
                                   unawaited(deleteSelectionFlow(context, ref));
                                 }
                               },
@@ -417,6 +433,7 @@ class _ViewOptionsKey extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (ref.watch(backendProvider) == ChatBackend.codex) return const SizedBox.shrink();
     final scope = ref.watch(drawerScopeProvider);
     final filtered = ref.watch(drawerFilterProvider) != DrawerFilter.all;
     ref.watch(sessionsProvider);
@@ -466,15 +483,19 @@ class _SessionList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final backend = ref.watch(backendProvider);
+    final codex = backend == ChatBackend.codex;
     final l10n = context.l10n;
-    final sessions = ref.watch(sessionsProvider);
-    final identity = ref.watch(readListIdentityProvider);
+    final sessions = codex ? ref.watch(codexSessionListProvider) : ref.watch(sessionsProvider);
+    final identity = codex ? ref.watch(activeHostProvider) : ref.watch(readListIdentityProvider);
     final workspace = ref.watch(selectedWorkspaceProvider);
     // Null while loading, or while a selected workspace's members haven't
     // arrived (rather than flash every conversation).
     final scope = ref.watch(drawerScopeProvider);
     if (scope == null) {
-      if (ref.watch(readListLiveConnectionProvider) == null && !sessions.isLoading) return const _EmptyState();
+      if (!codex && ref.watch(readListLiveConnectionProvider) == null && !sessions.isLoading) {
+        return const _EmptyState();
+      }
       if (sessions.hasError) {
         return _Centered(
           child: EmptyView(
@@ -482,7 +503,9 @@ class _SessionList extends ConsumerWidget {
             icon: AppIcons.offline,
             title: l10n.shellChatsLoadFailed,
             actionLabel: l10n.commonRetry,
-            onAction: () => ref.read(sessionsProvider.notifier).refresh(),
+            onAction: codex
+                ? () => ref.invalidate(codexWorkspaceProvider)
+                : () => ref.read(sessionsProvider.notifier).refresh(),
           ),
         );
       }
@@ -490,11 +513,17 @@ class _SessionList extends ConsumerWidget {
     }
     // DS Bot's conversations (its Bots' chats, groups, members' sessions)
     // fold into one row that opens the Bot pages.
-    final botReady = ref.watch(dsBotProvider.select((s) => s.ready));
+    final botReady = !codex && ref.watch(dsBotProvider.select((s) => s.ready));
     final showBots = scope.bots.isNotEmpty || (workspace == null && botReady);
-    if (scope.sessions.isEmpty && !showBots && ref.watch(drawerViewProvider).folders.isEmpty) {
+    if (scope.sessions.isEmpty && !showBots && (codex || ref.watch(drawerViewProvider).folders.isEmpty)) {
       if (scope.readOnly) return _Centered(child: Text(readListStatusText(scope.status)));
-      return workspace == null ? const _EmptyState() : const _WorkspaceEmptyState();
+      if (workspace != null) return const _WorkspaceEmptyState();
+      if (codex && ref.watch(activeConnectionProvider).asData?.value != null) {
+        return _Centered(
+          child: EmptyView(compact: true, icon: AppIcons.chat, title: l10n.shellNoChatsYet),
+        );
+      }
+      return const _EmptyState();
     }
     return DrawerConversationList(
       now: now,
@@ -511,21 +540,26 @@ class _SessionList extends ConsumerWidget {
             )
           : null,
       onOpen: (id) {
-        if (ref.read(readListIdentityProvider) != identity ||
+        final owner = codex ? ref.read(activeHostProvider) : ref.read(readListIdentityProvider);
+        if (ref.read(backendProvider) != backend ||
+            owner != identity ||
             ref.read(drawerScopeProvider)?.sessions.any((s) => s.sessionId == id) != true) {
           return;
         }
         ref.read(currentSessionProvider.notifier).select(id);
         onClose();
       },
-      onLongPress: (s) {
-        final current = ref.read(drawerScopeProvider);
-        if (ref.read(readListIdentityProvider) == identity &&
-            current?.readOnly == false &&
-            current!.sessions.any((row) => identical(row, s))) {
-          _showActions(context, ref, s);
-        }
-      },
+      onLongPress: codex
+          ? null
+          : (s) {
+              final current = ref.read(drawerScopeProvider);
+              if (ref.read(backendProvider) == ChatBackend.deepseek &&
+                  ref.read(readListIdentityProvider) == identity &&
+                  current?.readOnly == false &&
+                  current!.sessions.any((row) => identical(row, s))) {
+                _showActions(context, ref, s);
+              }
+            },
     );
   }
 
@@ -612,7 +646,7 @@ class _SessionList extends ConsumerWidget {
         ),
       ),
     );
-    if (!context.mounted || action == null) return;
+    if (!context.mounted || action == null || ref.read(backendProvider) != ChatBackend.deepseek) return;
     final messenger = ScaffoldMessenger.maybeOf(context);
     switch (action) {
       case 'pin' || 'unpin':
@@ -632,7 +666,13 @@ class _SessionList extends ConsumerWidget {
         ref.read(drawerSelectionProvider.notifier).start(s.sessionId);
       case 'rename':
         final next = await _askTitle(context, s.title?.trim() ?? '');
-        if (next == null || next.isEmpty || next == s.title) return;
+        if (!context.mounted ||
+            next == null ||
+            next.isEmpty ||
+            next == s.title ||
+            ref.read(backendProvider) != ChatBackend.deepseek) {
+          return;
+        }
         try {
           await ref.read(sessionsProvider.notifier).rename(s.sessionId, next);
         } catch (_) {
@@ -831,7 +871,13 @@ class _WorkspaceEmptyState extends ConsumerWidget {
         title: l10n.shellWorkspaceNoChats,
         message: l10n.shellWorkspaceNewChatsHint,
         actionLabel: l10n.remoteWorkspaceAllChats,
-        onAction: () => ref.read(workspacePrefsProvider.notifier).select(null),
+        onAction: () {
+          if (ref.read(backendProvider) == ChatBackend.codex) {
+            ref.read(codexWorkspaceSelectionProvider.notifier).select(null);
+          } else {
+            ref.read(workspacePrefsProvider.notifier).select(null);
+          }
+        },
       ),
     );
   }

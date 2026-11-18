@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/l10n.dart';
+import '../../../state/backend_state.dart';
 import '../../../state/drawer_view_state.dart';
 import '../../../state/session_attention_state.dart';
 import '../../../state/session_created_state.dart';
@@ -25,7 +26,7 @@ class DrawerConversationList extends ConsumerWidget {
   const DrawerConversationList({
     super.key,
     required this.onOpen,
-    required this.onLongPress,
+    this.onLongPress,
     this.onNewChat,
     this.leading,
     this.now,
@@ -39,7 +40,7 @@ class DrawerConversationList extends ConsumerWidget {
   final VoidCallback? onNewChat;
 
   /// A conversation's actions.
-  final void Function(SessionSummary session) onLongPress;
+  final void Function(SessionSummary session)? onLongPress;
 
   /// Above everything when nothing is filtered or chosen (DS Bot's row).
   final Widget? leading;
@@ -56,21 +57,24 @@ class DrawerConversationList extends ConsumerWidget {
     final l10n = context.l10n;
     final blocks = watchDrawerBlocks(ref, now: now);
     if (blocks == null) return const SizedBox.shrink();
-    final selection = ref.watch(drawerSelectionProvider);
+    final codex = ref.watch(backendProvider) == ChatBackend.codex;
+    final selection = codex ? null : ref.watch(drawerSelectionProvider);
     final selecting = !readOnly && selection != null;
     final filter = ref.watch(drawerFilterProvider);
     final current = ref.watch(currentSessionProvider);
-    final pending = ref.watch(pendingInteractionsProvider);
-    final unread = ref.watch(unreadSessionIdsProvider);
-    final pinned = ref.watch(workspacesProvider.select((s) => s.pinnedSessionIds)).toSet();
-    final sort = ref.watch(drawerViewProvider.select((v) => v.sort));
+    final pending = codex ? const <String, PendingKind>{} : ref.watch(pendingInteractionsProvider);
+    final unread = codex ? const <String>{} : ref.watch(unreadSessionIdsProvider);
+    final pinned = codex ? const <String>{} : ref.watch(workspacesProvider.select((s) => s.pinnedSessionIds)).toSet();
+    final sort = codex ? DrawerSort.activity : ref.watch(drawerViewProvider.select((v) => v.sort));
     if (!readOnly && sort == DrawerSort.created) {
       final ids = [
         for (final block in blocks)
           for (final s in block.items) s.sessionId,
       ];
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted) ref.read(sessionCreatedProvider.notifier).ensure(ids);
+        if (context.mounted && ref.read(backendProvider) == ChatBackend.deepseek) {
+          ref.read(sessionCreatedProvider.notifier).ensure(ids);
+        }
       });
     }
     final selectionNotifier = ref.read(drawerSelectionProvider.notifier);
@@ -89,11 +93,11 @@ class DrawerConversationList extends ConsumerWidget {
         selecting: selecting,
         selected: selection?.contains(id) ?? false,
         onTap: selecting ? () => selectionNotifier.toggle(id) : () => onOpen(id),
-        onLongPress: readOnly
+        onLongPress: readOnly || onLongPress == null
             ? null
             : selecting
             ? () => selectionNotifier.toggle(id)
-            : () => onLongPress(s),
+            : () => onLongPress!(s),
       );
     }
 

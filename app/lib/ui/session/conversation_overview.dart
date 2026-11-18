@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/l10n.dart';
 import '../../state/agents_state.dart' show subagentParentProvider;
 import '../../state/chat_state.dart';
+import '../../state/codex_state.dart';
 import '../../state/connection_state.dart';
 import '../../state/models_state.dart';
 import '../../state/session_search.dart' show folderLabel;
@@ -26,17 +27,19 @@ class ConversationOverview extends ConsumerWidget {
 
   void _pickModel(BuildContext context, WidgetRef ref, ModelSelection? current) {
     // Picked for this conversation on this connection, or for neither.
+    final codex = codexThreadId(sessionId) != null;
     final scope = ref.read(modelSelectionScopeProvider);
     final client = ref.read(activeConnectionProvider).value?.client;
     showModelSheet(
       context,
       current: current,
+      codex: codex,
       onSelected: (selection) {
         if (!identical(ref.read(modelSelectionScopeProvider), scope) ||
             !identical(ref.read(activeConnectionProvider).value?.client, client) ||
             ref.read(currentSessionProvider) != sessionId ||
             // The list can learn what kind of subagent this is while the sheet is open.
-            ref.read(subagentParentProvider(sessionId))?.address.mode == SubagentMode.oneShot) {
+            (!codex && ref.read(subagentParentProvider(sessionId))?.address.mode == SubagentMode.oneShot)) {
           return;
         }
         ref.read(chatProvider(sessionId).notifier).setModel(selection);
@@ -48,8 +51,10 @@ class ConversationOverview extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
     final theme = Theme.of(context);
+    final codex = codexThreadId(sessionId) != null;
+    final list = codex ? codexSessionListProvider : sessionsProvider;
     final summary = ref.watch(
-      sessionsProvider.select((s) => s.value?.where((session) => session.sessionId == sessionId).firstOrNull),
+      list.select((s) => s.value?.where((session) => session.sessionId == sessionId).firstOrNull),
     );
     // The list knows the title before the conversation has loaded.
     final title = [
@@ -57,11 +62,10 @@ class ConversationOverview extends ConsumerWidget {
       summary?.title,
     ].map((t) => t?.trim()).firstWhere((t) => t?.isNotEmpty ?? false, orElse: () => null);
     // A one-shot subagent takes no messages, nor another model.
-    final readOnly = ref.watch(
-      subagentParentProvider(sessionId).select((p) => p?.address.mode == SubagentMode.oneShot),
-    );
+    final readOnly =
+        !codex && ref.watch(subagentParentProvider(sessionId).select((p) => p?.address.mode == SubagentMode.oneShot));
     final model = ref.watch(chatProvider(sessionId).select((s) => s.model));
-    final catalog = ref.watch(currentModelCatalogProvider);
+    final catalog = codex ? ref.watch(currentCodexModelCatalogProvider) : ref.watch(currentModelCatalogProvider);
     final effective = model ?? catalog?.defaultSelection;
     final effort = effective?.reasoningEffort;
     final host = ref.watch(activeConnectionProvider.select((c) => c.value?.label));
@@ -82,14 +86,15 @@ class ConversationOverview extends ConsumerWidget {
         ),
         _Row(icon: AppIcons.remoteHosts, label: l10n.shellPanelHost, value: host ?? l10n.commonThisPhone),
         // What plugins can do to this conversation, each signed with whose it is.
-        for (final action in ref.watch(nativeSessionActionsProvider))
-          _Row(
-            key: ValueKey('overview-action|${action.package}|${action.id}'),
-            icon: action.icon ?? AppIcons.plugin,
-            label: action.label,
-            value: ref.watch(nativePluginTitleProvider(action.package)),
-            onTap: () => runNativeAction(context, ref, action, scope: DshGoScope(sessionId: sessionId)),
-          ),
+        if (!codex)
+          for (final action in ref.watch(nativeSessionActionsProvider))
+            _Row(
+              key: ValueKey('overview-action|${action.package}|${action.id}'),
+              icon: action.icon ?? AppIcons.plugin,
+              label: action.label,
+              value: ref.watch(nativePluginTitleProvider(action.package)),
+              onTap: () => runNativeAction(context, ref, action, scope: DshGoScope(sessionId: sessionId)),
+            ),
       ],
     );
   }

@@ -10,6 +10,7 @@ import 'dart:io';
 
 import 'package:dsh_app/state/hosts_state.dart';
 import 'package:dsh_app/state/android_features.dart';
+import 'package:dsh_app/state/backend_state.dart';
 import 'package:dsh_app/state/notify_state.dart';
 import 'package:dsh_app/state/sessions_state.dart';
 import 'package:dsh_app/state/ui_mode_state.dart';
@@ -512,6 +513,29 @@ void main() {
       await tester.tap(find.byType(WebModeKey));
       await tester.pumpAndSettle();
       expect(container.read(uiModeProvider).mode, UiMode.web);
+    });
+
+    testWidgets('the drawer backend key keeps the native home when switching', (tester) async {
+      SharedPreferences.setMockInitialValues({UiModeController.key: 'native'});
+      await tester.pumpWidget(
+        testApp(
+          const ModeHome(
+            native: Scaffold(body: Center(child: WebModeKey(switchBackend: true))),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final key = tester.element(find.byType(WebModeKey));
+      final container = ProviderScope.containerOf(key);
+      expect(tester.getSize(find.byType(GlassIconButton)), const Size.square(36));
+      await tester.tap(find.byType(WebModeKey));
+      await tester.pumpAndSettle();
+      expect(container.read(backendProvider), ChatBackend.codex);
+      expect(container.read(uiModeProvider).mode, UiMode.native);
+      expect(tester.element(find.byType(WebModeKey)), same(key));
+      await tester.tap(find.byType(WebModeKey));
+      await tester.pumpAndSettle();
+      expect(container.read(backendProvider), ChatBackend.deepseek);
     });
   });
 }

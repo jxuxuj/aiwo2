@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:dsh_client/dsh_client.dart' show ImageAttachment;
 import 'package:file_picker/file_picker.dart';
+import 'package:dsh_client/dsh_client.dart' show DshProtocolException;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,6 +13,8 @@ import 'package:image_picker/image_picker.dart';
 
 import '../l10n/l10n.dart';
 import 'attachment_files_ohos.dart';
+import '../remote/codex/codex_client.dart';
+import 'codex_state.dart';
 import 'connection_state.dart';
 
 /// Something picked in the composer and not sent yet.
@@ -386,5 +389,10 @@ final sessionImageProvider = FutureProvider.autoDispose.family<Uint8List, (Strin
   ref.onCancel(() => release = Timer(const Duration(seconds: 30), link.close));
   ref.onResume(() => release?.cancel());
   ref.onDispose(() => release?.cancel());
+  if (codexThreadId(sessionId) case final threadId?) {
+    final bytes = await CodexClient(client.carrier).fetchAttachment(threadId, attachment.attachmentId);
+    if (bytes == null) throw const DshProtocolException('Codex image attachment has no data');
+    return bytes;
+  }
   return (await client.attachment(sessionId, attachment)).bytes;
 });

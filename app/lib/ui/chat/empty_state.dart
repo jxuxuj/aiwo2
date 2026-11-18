@@ -152,6 +152,7 @@ class ChatEmptyState extends StatelessWidget {
     this.suggestions = defaultSuggestions,
     this.workspace,
     this.onWorkspace,
+    this.workspacePickerWithoutSelection = false,
     this.options,
     this.tips,
     this.tipStart,
@@ -181,6 +182,7 @@ class ChatEmptyState extends StatelessWidget {
 
   /// Switches [workspace].
   final VoidCallback? onWorkspace;
+  final bool workspacePickerWithoutSelection;
 
   /// The new conversation's options (folder, preset, permissions), one row of
   /// quiet chips under the workspace chip. Shown only while connected.
@@ -241,13 +243,13 @@ class ChatEmptyState extends StatelessWidget {
         ? EmptyPrimaryPill(key: const ValueKey('reconnect'), label: l10n.viewEmptyReconnect, onTap: retry)
         : idle != null
         ? EmptyPrimaryPill(key: ValueKey(idle.label), label: idle.label, onTap: idle.onTap)
-        : workspace != null && connected
+        : connected && (workspace != null || workspacePickerWithoutSelection)
         ? ConstrainedBox(
             key: const ValueKey('workspace'),
             constraints: const BoxConstraints(maxWidth: 280),
             child: QuietChip(
               icon: AppIcons.workspace,
-              label: l10n.viewEmptyWorkspace(workspace!),
+              label: workspace == null ? l10n.viewEmptySwitchWorkspace : l10n.viewEmptyWorkspace(workspace!),
               trailing: onWorkspace == null ? null : AppIcons.expand,
               onTap: onWorkspace,
               onTapHint: l10n.viewEmptySwitchWorkspace,
