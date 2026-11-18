@@ -3,28 +3,83 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../state/backend_state.dart';
 
-/// The Codex home: the same layout as the DeepSeek one — menu, title and host
-/// on the top bar, the model pill on the right, the greeting and the four
-/// suggestion cards, the composer with + / mic at the bottom — filled with
-/// Codex content.
+/// A static Codex workspace for the shell. Real data is wired later; this is
+/// the shape the drawer renders so the layout can be judged first.
+class _FakeWorkspace {
+  const _FakeWorkspace(this.name, this.threads);
+
+  final String name;
+  final List<String> threads;
+}
+
+const _fakeWorkspaces = <_FakeWorkspace>[
+  _FakeWorkspace('电商agent', ['修一下库存同步的竞态', '把导出改成流式写', '给订单表加索引']),
+  _FakeWorkspace('自动视频产出', ['字幕时间轴偏移了 0.3 秒', '批量转码脚本报错']),
+  _FakeWorkspace('deepseek设定', ['看看工作区', '讲讲 Git rebase']),
+  _FakeWorkspace('其他', ['一次性清理临时文件']),
+];
+
+const _models = <(String, String)>[
+  ('Codex 5.1', '默认，速度和能力平衡'),
+  ('Codex 5.1 Max', '更慢，复杂重构用'),
+  ('Codex Mini', '快，适合小改动'),
+];
+
+/// The Codex shell: the same layout as the DeepSeek home — drawer on the left
+/// (brand, search, filters, workspaces, host footer), top bar with the model
+/// pill, greeting and suggestion cards, composer at the bottom.
 ///
-/// It is deliberately not wired to any backend yet: the switch animation and
-/// the shell come first, the data adapter next. Nothing here calls the Host.
-class CodexHome extends ConsumerWidget {
+/// Dark on purpose: Codex's own surface is near-black. Nothing here calls the
+/// Host yet; the connection and its data layer stay intact behind it.
+class CodexHome extends ConsumerStatefulWidget {
   const CodexHome({super.key});
 
-  static const _suggestions = <(IconData, String, String, Color)>[
-    (Icons.terminal, '跑个命令', '在项目里执行并看输出', Color(0xFF5B8C5A)),
-    (Icons.description_outlined, '读这份文件', '让它先理解再动手', Color(0xFF4A6FA5)),
-    (Icons.alt_route, '新建分支', '从当前线程分叉', Color(0xFF7A5AA5)),
-    (Icons.bug_report_outlined, '查这个报错', '定位并给修复', Color(0xFFA5764A)),
-  ];
+  @override
+  ConsumerState<CodexHome> createState() => _CodexHomeState();
+}
+
+class _CodexHomeState extends ConsumerState<CodexHome> {
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+  String _model = _models.first.$1;
+  int _filter = 0;
+
+  static const _filters = ['全部', '运行中', '待确认', '未读'];
+
+  void _notWired(String what) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$what：这是外壳，数据下一步接')),
+    );
+  }
+
+  Future<void> _pickModel() async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 4, 20, 12),
+              child: Align(alignment: Alignment.centerLeft, child: Text('选择模型', style: TextStyle(fontWeight: FontWeight.w600))),
+            ),
+            for (final (name, subtitle) in _models)
+              ListTile(
+                title: Text(name),
+                subtitle: Text(subtitle),
+                trailing: name == _model ? const Icon(Icons.check) : null,
+                onTap: () => Navigator.of(context).pop(name),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (picked != null && mounted) setState(() => _model = picked);
+  }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // Codex's own shell is dark regardless of the app theme: near-black
-    // backdrop, cool grey cards, one accent. Everything below reads the
-    // colour scheme, so wrapping once is enough.
+  Widget build(BuildContext context) {
     final darkScheme = ColorScheme.fromSeed(
       seedColor: const Color(0xFF6E8BFF),
       brightness: Brightness.dark,
@@ -38,11 +93,27 @@ class CodexHome extends ConsumerWidget {
           final theme = Theme.of(context);
           final scheme = theme.colorScheme;
           return Scaffold(
+            key: _scaffoldKey,
             backgroundColor: scheme.surface,
+            drawer: _CodexDrawer(
+              filters: _filters,
+              selected: _filter,
+              onFilter: (index) {
+                setState(() => _filter = index);
+                Navigator.of(context).pop();
+              },
+              onClose: () => Navigator.of(context).pop(),
+              onSwitch: () => ref.read(backendProvider.notifier).toggle(),
+            ),
             body: SafeArea(
               child: Column(
                 children: [
-                  _TopBar(onSwitch: () => ref.read(backendProvider.notifier).toggle()),
+                  _TopBar(
+                    model: _model,
+                    onMenu: () => _scaffoldKey.currentState?.openDrawer(),
+                    onModel: _pickModel,
+                    onSwitch: () => ref.read(backendProvider.notifier).toggle(),
+                  ),
                   Expanded(
                     child: ListView(
                       padding: const EdgeInsets.fromLTRB(20, 32, 20, 24),
@@ -57,14 +128,14 @@ class CodexHome extends ConsumerWidget {
                         const SizedBox(height: 8),
                         Center(child: Text('今天想做点什么？', style: theme.textTheme.titleMedium)),
                         const SizedBox(height: 20),
-                        Center(child: _Pill(icon: Icons.folder_outlined, label: '在「Codex」中')),
+                        Center(child: _Pill(icon: Icons.folder_outlined, label: '在「电商agent」中', onTap: () => _notWired('切换工作区'))),
                         const SizedBox(height: 12),
                         Center(
                           child: Wrap(
                             spacing: 12,
-                            children: const [
-                              _Pill(icon: Icons.build_outlined, label: '标准模式'),
-                              _Pill(icon: Icons.shield_outlined, label: '工作区内修改'),
+                            children: [
+                              _Pill(icon: Icons.build_outlined, label: '标准模式', onTap: () => _notWired('模式')),
+                              _Pill(icon: Icons.shield_outlined, label: '工作区内修改', onTap: () => _notWired('权限')),
                             ],
                           ),
                         ),
@@ -77,8 +148,13 @@ class CodexHome extends ConsumerWidget {
                           crossAxisSpacing: 12,
                           childAspectRatio: 1.9,
                           children: [
-                            for (final (icon, title, subtitle, tint) in _suggestions)
-                              _SuggestionCard(icon: icon, title: title, subtitle: subtitle, tint: tint),
+                            for (final (icon, title, subtitle, tint) in const [
+                              (Icons.terminal, '跑个命令', '在项目里执行并看输出', Color(0xFF5B8C5A)),
+                              (Icons.description_outlined, '读这份文件', '让它先理解再动手', Color(0xFF4A6FA5)),
+                              (Icons.alt_route, '新建分支', '从当前线程分叉', Color(0xFF7A5AA5)),
+                              (Icons.bug_report_outlined, '查这个报错', '定位并给修复', Color(0xFFA5764A)),
+                            ])
+                              _SuggestionCard(icon: icon, title: title, subtitle: subtitle, tint: tint, onTap: () => _notWired(title)),
                           ],
                         ),
                         const SizedBox(height: 20),
@@ -97,7 +173,7 @@ class CodexHome extends ConsumerWidget {
                       ],
                     ),
                   ),
-                  _Composer(onUseDeepSeek: () => ref.read(backendProvider.notifier).toggle()),
+                  _Composer(onNotWired: () => _notWired('发消息')),
                 ],
               ),
             ),
@@ -108,9 +184,137 @@ class CodexHome extends ConsumerWidget {
   }
 }
 
-class _TopBar extends StatelessWidget {
-  const _TopBar({required this.onSwitch});
+class _CodexDrawer extends StatelessWidget {
+  const _CodexDrawer({
+    required this.filters,
+    required this.selected,
+    required this.onFilter,
+    required this.onClose,
+    required this.onSwitch,
+  });
 
+  final List<String> filters;
+  final int selected;
+  final ValueChanged<int> onFilter;
+  final VoidCallback onClose;
+  final VoidCallback onSwitch;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Drawer(
+      backgroundColor: scheme.surface,
+      child: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.only(bottom: 16),
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 10, 10),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'DSH · Codex',
+                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  _Pill(icon: Icons.swap_horiz, label: 'DSH', onTap: onSwitch),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: TextField(
+                readOnly: true,
+                onTap: () {
+                  Navigator.of(context).pop();
+                  ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                    const SnackBar(content: Text('搜索：这是外壳，数据下一步接')),
+                  );
+                },
+                decoration: InputDecoration(
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  hintText: '搜索对话',
+                  isDense: true,
+                  filled: true,
+                  fillColor: scheme.surfaceContainerHighest,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(22), borderSide: BorderSide.none),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+              child: Row(
+                children: [
+                  Icon(Icons.chat_bubble_outline, size: 16, color: scheme.onSurfaceVariant),
+                  const SizedBox(width: 6),
+                  Text('全部对话', style: theme.textTheme.labelLarge),
+                  const Spacer(),
+                  Icon(Icons.more_horiz, size: 18, color: scheme.onSurfaceVariant),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (var i = 0; i < filters.length; i++)
+                    ChoiceChip(
+                      label: Text(filters[i]),
+                      selected: i == selected,
+                      onSelected: (_) => onFilter(i),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                ],
+              ),
+            ),
+            for (final workspace in _fakeWorkspaces) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 14, 18, 4),
+                child: Text(
+                  workspace.name,
+                  style: theme.textTheme.labelMedium?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+              ),
+              for (final thread in workspace.threads)
+                ListTile(
+                  dense: true,
+                  visualDensity: VisualDensity.compact,
+                  title: Text(thread, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                      const SnackBar(content: Text('打开线程：这是外壳，数据下一步接')),
+                    );
+                  },
+                ),
+            ],
+            const SizedBox(height: 12),
+            const Divider(height: 1),
+            ListTile(
+              dense: true,
+              leading: Icon(Icons.desktop_windows_outlined, size: 18, color: scheme.onSurfaceVariant),
+              title: Text('WIN-KDEQU2G0KLK', style: theme.textTheme.bodyMedium),
+              subtitle: Text('远程 · P2P 点对点', style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+              trailing: Icon(Icons.settings, size: 18, color: scheme.onSurfaceVariant),
+              onTap: () => Navigator.of(context).pop(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TopBar extends StatelessWidget {
+  const _TopBar({required this.model, required this.onMenu, required this.onModel, required this.onSwitch});
+
+  final String model;
+  final VoidCallback onMenu;
+  final VoidCallback onModel;
   final VoidCallback onSwitch;
 
   @override
@@ -118,10 +322,10 @@ class _TopBar extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      padding: const EdgeInsets.fromLTRB(8, 6, 12, 6),
       child: Row(
         children: [
-          IconButton(onPressed: onSwitch, icon: const Icon(Icons.menu), tooltip: '切回 DSH'),
+          IconButton(onPressed: onMenu, icon: const Icon(Icons.menu), tooltip: '工作区'),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -129,21 +333,22 @@ class _TopBar extends StatelessWidget {
                 Text('新对话', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
                 Row(
                   children: [
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: BoxDecoration(color: scheme.primary, shape: BoxShape.circle),
-                    ),
+                    Container(width: 6, height: 6, decoration: BoxDecoration(color: scheme.primary, shape: BoxShape.circle)),
                     const SizedBox(width: 6),
-                    Text('Codex · 远程', style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+                    Flexible(
+                      child: Text(
+                        'WIN-KDEQU2G0KLK · 远程',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                      ),
+                    ),
                   ],
                 ),
               ],
             ),
           ),
-          _Pill(icon: Icons.swap_horiz, label: '切回 DSH', onTap: onSwitch),
-          const SizedBox(width: 8),
-          _Pill(icon: Icons.memory, label: 'Codex'),
+          _Pill(icon: Icons.memory, label: model, onTap: onModel),
         ],
       ),
     );
@@ -175,6 +380,10 @@ class _Pill extends StatelessWidget {
               Icon(icon, size: 15, color: scheme.onSurfaceVariant),
               const SizedBox(width: 6),
               Text(label, style: theme.textTheme.labelLarge),
+              if (onTap != null) ...[
+                const SizedBox(width: 2),
+                Icon(Icons.expand_more, size: 15, color: scheme.onSurfaceVariant),
+              ],
             ],
           ),
         ),
@@ -184,77 +393,63 @@ class _Pill extends StatelessWidget {
 }
 
 class _SuggestionCard extends StatelessWidget {
-  const _SuggestionCard({required this.icon, required this.title, required this.subtitle, required this.tint});
+  const _SuggestionCard({required this.icon, required this.title, required this.subtitle, required this.tint, this.onTap});
 
   final IconData icon;
   final String title;
   final String subtitle;
   final Color tint;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
+    return Material(
+      color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
         borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(color: tint.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(10)),
-            child: Icon(icon, size: 17, color: tint),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(title, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(color: tint.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(10)),
+                child: Icon(icon, size: 17, color: tint),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(title, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 }
 
-class _Composer extends StatefulWidget {
-  const _Composer({required this.onUseDeepSeek});
+class _Composer extends StatelessWidget {
+  const _Composer({required this.onNotWired});
 
-  final VoidCallback onUseDeepSeek;
-
-  @override
-  State<_Composer> createState() => _ComposerState();
-}
-
-class _ComposerState extends State<_Composer> {
-  final _controller = TextEditingController();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _notWired() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('这是 Codex 界面外壳，数据还没接上（下一步）')),
-    );
-  }
+  final VoidCallback onNotWired;
 
   @override
   Widget build(BuildContext context) {
@@ -263,13 +458,12 @@ class _ComposerState extends State<_Composer> {
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
       child: Row(
         children: [
-          IconButton.filledTonal(onPressed: _notWired, icon: const Icon(Icons.add)),
+          IconButton.filledTonal(onPressed: onNotWired, icon: const Icon(Icons.add)),
           const SizedBox(width: 8),
           Expanded(
             child: TextField(
-              controller: _controller,
               readOnly: true,
-              onTap: _notWired,
+              onTap: onNotWired,
               decoration: InputDecoration(
                 hintText: '给 Codex 发消息…',
                 filled: true,
@@ -280,7 +474,7 @@ class _ComposerState extends State<_Composer> {
             ),
           ),
           const SizedBox(width: 8),
-          IconButton.filled(onPressed: _notWired, icon: const Icon(Icons.mic)),
+          IconButton.filled(onPressed: onNotWired, icon: const Icon(Icons.mic)),
         ],
       ),
     );
