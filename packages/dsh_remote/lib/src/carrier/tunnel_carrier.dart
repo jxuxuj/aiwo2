@@ -504,10 +504,10 @@ class RemoteTunnelCarrier extends DshCarrier implements WorkspaceUploadCarrier {
   /// A Codex call whose payload may be larger than one frame (an image Prompt).
   /// Small payloads go inline; larger ones are chunked through the Codex
   /// transfer carrier, whose committed content the Host runs as one call.
-  Future<Object?> rawCallChunked(String rpcMethod, Object? envelope, {Duration? timeout}) async {
+  Future<Object?> rawCallChunked(String rpcMethod, Object? envelope, {Duration? timeout, bool forceChunked = false}) async {
     final session = await _ensureSession();
     final encoded = utf8.encode(jsonEncode(envelope));
-    if (encoded.length <= directRemoteCallBytes) {
+    if (!forceChunked && encoded.length <= directRemoteCallBytes) {
       _tracer?.call(DshTraceEntry('out', 'rpc', {'rpc': rpcMethod, 'bytes': encoded.length}));
       return session.rpc.call(rpcMethod, envelope, timeout: timeout ?? callTimeout);
     }

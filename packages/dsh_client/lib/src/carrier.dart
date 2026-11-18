@@ -71,7 +71,11 @@ abstract class DshCarrier {
 
   /// [rawCall] for a payload that may not fit one frame. Carriers without a
   /// chunked path fall back to the inline call and let the Host refuse it.
-  Future<Object?> rawCallChunked(String method, Object? params, {Duration? timeout}) => rawCall(method, params, timeout: timeout);
+  ///
+  /// [forceChunked] is for payloads the Host only accepts through its chunked
+  /// carrier (a Codex image Prompt), whatever their size.
+  Future<Object?> rawCallChunked(String method, Object? params, {Duration? timeout, bool forceChunked = false}) =>
+      rawCall(method, params, timeout: timeout);
 
   /// Opens a fresh physical link for [DshMux].
   ///

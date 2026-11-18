@@ -154,10 +154,14 @@ class CodexClient {
       {'type': 'image', 'mediaType': mediaType, 'data': base64Encode(bytes)},
       if (text.trim().isNotEmpty) {'type': 'text', 'text': text.trim()},
     ];
-    await carrier.rawCallChunked('codex.app.call', <String, Object?>{
-      'method': 'turn/start',
-      'params': {'threadId': threadId, 'input': input},
-    });
+    await carrier.rawCallChunked(
+      'codex.app.call',
+      <String, Object?>{
+        'method': 'turn/start',
+        'params': {'threadId': threadId, 'input': input},
+      },
+      forceChunked: true,
+    );
   }
 
   /// Branches [threadId] into a new thread that keeps its earlier turns.
