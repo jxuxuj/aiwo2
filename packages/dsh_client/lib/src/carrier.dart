@@ -69,6 +69,10 @@ abstract class DshCarrier {
   Future<Object?> rawCall(String method, Object? params, {Duration? timeout}) =>
       Future<Object?>.error(UnsupportedError('$runtimeType has no raw RPC channel'));
 
+  /// [rawCall] for a payload that may not fit one frame. Carriers without a
+  /// chunked path fall back to the inline call and let the Host refuse it.
+  Future<Object?> rawCallChunked(String method, Object? params, {Duration? timeout}) => rawCall(method, params, timeout: timeout);
+
   /// Opens a fresh physical link for [DshMux].
   ///
   /// Throw [DshHttpException] 401/403 or [DshCarrierRefusedException] when a

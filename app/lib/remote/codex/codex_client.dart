@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:dsh_client/dsh_client.dart';
 
 /// One Codex thread as the Host's `thread/list` reports it.
@@ -142,6 +145,20 @@ class CodexClient {
   /// Stops the running turn.
   Future<void> interrupt(String threadId, String turnId) =>
       _call('turn/interrupt', <String, Object?>{'threadId': threadId, 'turnId': turnId});
+
+  /// Sends one image as a Prompt. The Host only accepts PNG/JPEG/WebP/GIF and
+  /// converts the bytes to a `data:` URL itself; anything else is refused by
+  /// the Host's own validation.
+  Future<void> sendImage(String threadId, Uint8List bytes, String mediaType, {String text = ''}) async {
+    final input = <Map<String, Object?>>[
+      {'type': 'image', 'mediaType': mediaType, 'data': base64Encode(bytes)},
+      if (text.trim().isNotEmpty) {'type': 'text', 'text': text.trim()},
+    ];
+    await carrier.rawCallChunked('codex.app.call', <String, Object?>{
+      'method': 'turn/start',
+      'params': {'threadId': threadId, 'input': input},
+    });
+  }
 
   /// Branches [threadId] into a new thread that keeps its earlier turns.
   Future<String?> fork(String threadId) async {

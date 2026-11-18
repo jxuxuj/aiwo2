@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../remote/codex/codex_client.dart';
 import '../../state/codex_state.dart';
@@ -87,6 +88,36 @@ class _CodexThreadPageState extends ConsumerState<CodexThreadPage> {
     }
   }
 
+  Future<void> _pickImage() async {
+    final client = _client;
+    if (client == null || _sending) return;
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 2048, imageQuality: 90);
+    if (picked == null) return;
+    final bytes = await picked.readAsBytes();
+    if (!mounted) return;
+    setState(() => _sending = true);
+    try {
+      await client.sendImage(widget.threadId, bytes, _mediaTypeOf(picked.path), text: _controller.text);
+      _controller.clear();
+      ref.invalidate(codexHistoryProvider(widget.threadId));
+      _startPolling();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('发送图片失败：$error')));
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  static String _mediaTypeOf(String path) {
+    final lower = path.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    if (lower.endsWith('.gif')) return 'image/gif';
+    return 'image/jpeg';
+  }
+
   Future<void> _fork() async {
     final client = _client;
     if (client == null) return;
@@ -160,6 +191,11 @@ class _CodexThreadPageState extends ConsumerState<CodexThreadPage> {
                     ),
                   ),
                   const SizedBox(width: 8),
+                  IconButton(
+                    onPressed: _sending ? null : _pickImage,
+                    icon: const Icon(Icons.image_outlined),
+                    tooltip: '发送图片',
+                  ),
                   IconButton.filled(
                     onPressed: _sending ? null : _send,
                     icon: _sending
