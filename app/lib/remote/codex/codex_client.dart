@@ -99,6 +99,22 @@ class CodexClient {
   Future<Object?> _call(String method, Map<String, Object?> params) =>
       carrier.rawCall('codex.app.call', <String, Object?>{'method': method, 'params': params});
 
+  /// The models the Host's Codex offers.
+  Future<List<(String id, String name)>> listModels({int limit = 50}) async {
+    final result = await _call('model/list', <String, Object?>{'limit': limit});
+    if (result is! Map) return const [];
+    final data = result['data'];
+    if (data is! List) return const [];
+    final models = <(String, String)>[];
+    for (final item in data) {
+      if (item is! Map) continue;
+      final id = item['id'];
+      if (id is! String || id.isEmpty) continue;
+      final raw = item['displayName'] ?? item['name'] ?? id;
+      models.add((id, raw is String ? raw : id));
+    }
+    return models;
+  }
   /// Codex projects (the Host's workspaces).
   Future<List<CodexProject>> listProjects({int limit = 100}) async {
     final result = await _call('project/list', <String, Object?>{'limit': limit});
@@ -133,12 +149,21 @@ class CodexClient {
   }
 
   /// Sends a text prompt to [threadId] and starts a turn.
-  Future<void> sendText(String threadId, String text) async {
+  Future<void> sendText(
+    String threadId,
+    String text, {
+    String? model,
+    String? permissionPreset,
+    String? effort,
+  }) async {
     await _call('turn/start', <String, Object?>{
       'threadId': threadId,
       'input': [
         {'type': 'text', 'text': text},
       ],
+      if (model != null && model.isNotEmpty) 'model': model,
+      if (permissionPreset != null && permissionPreset.isNotEmpty) 'permissionPreset': permissionPreset,
+      if (effort != null && effort.isNotEmpty) 'effort': effort,
     });
   }
 

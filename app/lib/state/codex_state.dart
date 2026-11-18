@@ -78,3 +78,9 @@ final codexAttachmentProvider =
   if (client == null) return null;
   return CodexClient(client.carrier).fetchAttachment(key.threadId, key.attachmentId);
 });
+/// The models the Host's Codex offers.
+final codexModelsProvider = FutureProvider.autoDispose<List<(String id, String name)>>((ref) async {
+  final client = ref.watch(activeConnectionProvider).value?.client;
+  if (client == null) return const <(String, String)>[];
+  return CodexClient(client.carrier).listModels();
+});

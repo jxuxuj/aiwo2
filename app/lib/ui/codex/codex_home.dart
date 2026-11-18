@@ -47,6 +47,8 @@ class _CodexHomeState extends ConsumerState<CodexHome> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _controller = TextEditingController();
   String _model = _models.first.$1;
+  String _permission = 'workspace-write';
+  bool _fast = false;
   int _filter = 0;
   bool _sending = false;
 
@@ -99,7 +101,7 @@ class _CodexHomeState extends ConsumerState<CodexHome> {
         _notWired('主机没有返回线程 ID');
         return;
       }
-      await codex.sendText(threadId, text);
+      await codex.sendText(threadId, text, permissionPreset: _permission, effort: _fast ? 'low' : null);
       _controller.clear();
       ref.invalidate(codexWorkspaceProvider);
       if (!mounted) return;
@@ -296,8 +298,8 @@ class _CodexHomeState extends ConsumerState<CodexHome> {
                           child: Wrap(
                             spacing: 12,
                             children: [
-                              _Pill(icon: Icons.build_outlined, label: '标准模式', onTap: () => _notWired('模式')),
-                              _Pill(icon: Icons.shield_outlined, label: '工作区内修改', onTap: () => _notWired('权限')),
+                              _Pill(icon: Icons.bolt_outlined, label: _fast ? '加速：开' : '加速：关', onTap: () => setState(() => _fast = !_fast)),
+                              _Pill(icon: Icons.shield_outlined, label: _permission == 'workspace-write' ? '工作区内修改' : '完全权限', onTap: () => setState(() => _permission = _permission == 'workspace-write' ? 'danger-full-access' : 'workspace-write')),
                             ],
                           ),
                         ),
