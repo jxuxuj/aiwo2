@@ -17446,6 +17446,13 @@ class L10nEn extends L10n {
   String get remoteWorkspaceRemoveBody => 'Folder and chats stay';
 
   @override
+  String get remoteCodexWorkspaceRemoveBody =>
+      'Hide this workspace on this phone. You can restore it under Hidden workspaces.';
+
+  @override
+  String get remoteCodexWorkspaceHidden => 'Hidden workspaces';
+
+  @override
   String get remoteWorkspaceRemove => 'Remove';
 
   @override

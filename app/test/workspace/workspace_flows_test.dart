@@ -5,6 +5,8 @@
 
 import 'dart:ui' show Tristate;
 
+import 'package:dsh_app/state/backend_state.dart';
+import 'package:dsh_app/state/codex_state.dart';
 import 'package:dsh_app/state/connection_state.dart';
 import 'package:dsh_app/state/hosts_state.dart';
 import 'package:dsh_app/state/sessions_state.dart';
@@ -70,6 +72,39 @@ Future<void> _openSwitcher(WidgetTester tester) async {
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  testWidgets('long-pressing a Codex workspace opens the shared actions and can hide and restore it', (tester) async {
+    final container = await _pump(tester, Scaffold(body: WorkspaceSwitcher(onManage: () {})), [
+      activeHostProvider.overrideWith(() => _RemoteHost('codex-pc')),
+      codexWorkspaceProvider.overrideWith(
+        (_) async => const [CodexWorkspace(id: 'cwd:/project', name: '项目甲', root: '/project', threads: [])],
+      ),
+    ]);
+    container.read(backendProvider.notifier).set(ChatBackend.codex);
+    await _settle(tester);
+    await _openSwitcher(tester);
+    await tester.longPress(find.text('项目甲'));
+    await _settle(tester);
+    for (final action in ['重命名', '置顶', '分组', '移除工作区']) {
+      expect(find.text(action), findsOneWidget);
+    }
+    await tester.tap(find.text('置顶'));
+    await _settle(tester);
+    expect(container.read(codexWorkspacePrefsProvider).pinned, ['cwd:/project']);
+    expect(container.read(workspacePrefsProvider).pinned, isEmpty);
+    expect(find.text('取消置顶'), findsOneWidget);
+    await tester.tap(find.text('移除工作区'));
+    await _settle(tester);
+    await tester.tap(find.widgetWithText(FilledButton, '移除'));
+    await _settle(tester);
+    expect(container.read(displayedCodexWorkspacesProvider).value, isEmpty);
+    expect(container.read(codexWorkspaceListProvider).value?.single.title, '项目甲');
+    await tester.tap(find.text('已隐藏的工作区'));
+    await _settle(tester);
+    await tester.tap(find.text('项目甲'));
+    await _settle(tester);
+    expect(container.read(displayedCodexWorkspacesProvider).value?.single.title, '项目甲');
+  });
 
   group('drawer', () {
     testWidgets('the switcher filters the list; 全部对话 shows everything again', (tester) async {

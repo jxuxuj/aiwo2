@@ -9930,6 +9930,8 @@
     }
   },
   "remoteWorkspaceRemoveBody": "文件夹和对话都会保留",
+  "remoteCodexWorkspaceRemoveBody": "从手机工作区列表隐藏，可在「已隐藏的工作区」恢复。",
+  "remoteCodexWorkspaceHidden": "已隐藏的工作区",
   "remoteWorkspaceRemove": "移除",
   "remoteWorkspace": "工作区",
   "remoteWorkspaceNewChatHere": "在这里新建对话",

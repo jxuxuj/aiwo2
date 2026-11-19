@@ -16614,6 +16614,12 @@ class L10nZh extends L10n {
   String get remoteWorkspaceRemoveBody => '文件夹和对话都会保留';
 
   @override
+  String get remoteCodexWorkspaceRemoveBody => '从手机工作区列表隐藏，可在「已隐藏的工作区」恢复。';
+
+  @override
+  String get remoteCodexWorkspaceHidden => '已隐藏的工作区';
+
+  @override
   String get remoteWorkspaceRemove => '移除';
 
   @override

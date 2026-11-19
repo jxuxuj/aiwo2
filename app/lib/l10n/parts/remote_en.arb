@@ -391,6 +391,8 @@
   "remoteWorkspaceNameRequired": "Give it a name",
   "remoteWorkspaceRemoveTitle": "Remove “{name}”?",
   "remoteWorkspaceRemoveBody": "Folder and chats stay",
+  "remoteCodexWorkspaceRemoveBody": "Hide this workspace on this phone. You can restore it under Hidden workspaces.",
+  "remoteCodexWorkspaceHidden": "Hidden workspaces",
   "remoteWorkspaceRemove": "Remove",
   "remoteWorkspace": "Workspace",
   "remoteWorkspaceNewChatHere": "New chat here",

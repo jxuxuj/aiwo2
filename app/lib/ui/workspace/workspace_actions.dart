@@ -9,7 +9,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
+import '../../state/backend_state.dart';
+import '../../state/codex_state.dart';
 import '../../state/connection_state.dart';
+import '../../state/hosts_state.dart';
 import '../../state/sessions_state.dart';
 import '../../state/workspaces_state.dart';
 import '../common/app_dialog.dart';
@@ -61,25 +64,34 @@ String conversationCountLabel(int n) => n == 0 ? appL10n.remoteWorkspaceNoChats 
 Future<void> showWorkspaceActions(BuildContext context, Workspace workspace, {VoidCallback? onNewConversation}) {
   final container = ProviderScope.containerOf(context, listen: false);
   final messenger = ScaffoldMessenger.maybeOf(context);
+  final backend = container.read(backendProvider);
+  final host = container.read(activeHostProvider);
+  bool current() =>
+      context.mounted && container.read(activeHostProvider) == host && container.read(backendProvider) == backend;
+  final codex = backend == ChatBackend.codex;
   return showAppSheet<void>(
     context,
     isScrollControlled: true,
     builder: (sheet) => SheetNavigator(
       root: (_) => _WorkspaceActions(
         workspaceId: workspace.workspaceId,
+        backend: backend,
+        host: host,
         onRename: () async {
           Navigator.of(sheet).pop();
-          await _rename(context, container, messenger, workspace.workspaceId);
+          if (!current()) return;
+          await _rename(context, container, messenger, workspace, codex: codex, current: current);
         },
         onRemove: () async {
           Navigator.of(sheet).pop();
-          await _remove(context, container, messenger, workspace.workspaceId);
+          if (!current()) return;
+          await _remove(context, container, messenger, workspace, codex: codex, current: current);
         },
         onNewConversation: onNewConversation == null
             ? null
             : () {
                 Navigator.of(sheet).pop();
-                onNewConversation();
+                if (current()) onNewConversation();
               },
       ),
     ),
@@ -90,15 +102,22 @@ Future<void> _rename(
   BuildContext context,
   ProviderContainer container,
   ScaffoldMessengerState? messenger,
-  String id,
-) async {
+  Workspace workspace, {
+  required bool codex,
+  required bool Function() current,
+}) async {
   final l10n = context.l10n;
-  final current = container.read(workspacesProvider).byId(id);
-  if (current == null || !context.mounted) return;
-  final title = await askWorkspaceTitle(context, workspaceTitle(current));
-  if (title == null || title.isEmpty || title == current.title) return;
+  final id = workspace.workspaceId;
+  final shown = codex ? workspace : container.read(workspacesProvider).byId(id);
+  if (shown == null) return;
+  final title = await askWorkspaceTitle(context, workspaceTitle(shown));
+  if (title == null || title.isEmpty || title == shown.title || !current()) return;
   try {
-    await container.read(workspacesProvider.notifier).rename(id, title);
+    if (codex) {
+      await container.read(codexWorkspacePrefsProvider.notifier).renameDisplay(id, title);
+    } else {
+      await container.read(workspacesProvider.notifier).rename(id, title);
+    }
   } catch (e) {
     messenger?.showSnackBar(SnackBar(content: Text(workspaceErrorText(e, fallback: l10n.remoteWorkspaceErrRename))));
   }
@@ -108,16 +127,26 @@ Future<void> _remove(
   BuildContext context,
   ProviderContainer container,
   ScaffoldMessengerState? messenger,
-  String id,
-) async {
+  Workspace workspace, {
+  required bool codex,
+  required bool Function() current,
+}) async {
   final l10n = context.l10n;
-  final current = container.read(workspacesProvider).byId(id);
-  if (current == null || !context.mounted) return;
-  final name = workspaceTitle(current);
-  final ok = await confirmRemoveWorkspace(context, name);
-  if (!ok) return;
+  final id = workspace.workspaceId;
+  final shown = codex ? workspace : container.read(workspacesProvider).byId(id);
+  if (shown == null) return;
+  final name = workspaceTitle(shown);
+  final ok = await confirmRemoveWorkspace(context, name, codex: codex);
+  if (!ok || !current()) return;
   try {
-    await container.read(workspacesProvider.notifier).remove(id);
+    if (codex) {
+      if (container.read(selectedCodexWorkspaceProvider)?.workspaceId == id) {
+        container.read(codexWorkspaceSelectionProvider.notifier).select(null);
+      }
+      await container.read(codexWorkspacePrefsProvider.notifier).setHidden(id, true);
+    } else {
+      await container.read(workspacesProvider.notifier).remove(id);
+    }
     messenger?.showBriefNotice(l10n.remoteWorkspaceRemoved(name));
   } catch (e) {
     messenger?.showSnackBar(SnackBar(content: Text(workspaceErrorText(e, fallback: l10n.remoteWorkspaceErrRemove))));
@@ -135,13 +164,13 @@ Future<String?> askWorkspaceTitle(BuildContext context, String initial) => showT
 );
 
 /// 「移除「name」？」 — the folder and its conversations stay.
-Future<bool> confirmRemoveWorkspace(BuildContext context, String name) async {
+Future<bool> confirmRemoveWorkspace(BuildContext context, String name, {bool codex = false}) async {
   final l10n = context.l10n;
   final ok = await showAppDialog<bool>(
     context: context,
     builder: (dialog) => AlertDialog(
       title: Text(l10n.remoteWorkspaceRemoveTitle(name)),
-      content: Text(l10n.remoteWorkspaceRemoveBody),
+      content: Text(codex ? l10n.remoteCodexWorkspaceRemoveBody : l10n.remoteWorkspaceRemoveBody),
       actions: [
         TextButton(onPressed: () => Navigator.pop(dialog, false), child: Text(l10n.commonCancel)),
         FilledButton(
@@ -161,12 +190,16 @@ Future<bool> confirmRemoveWorkspace(BuildContext context, String name) async {
 class _WorkspaceActions extends ConsumerWidget {
   const _WorkspaceActions({
     required this.workspaceId,
+    required this.backend,
+    required this.host,
     required this.onRename,
     required this.onRemove,
     this.onNewConversation,
   });
 
   final String workspaceId;
+  final ChatBackend backend;
+  final HostRef host;
   final VoidCallback onRename;
   final VoidCallback onRemove;
   final VoidCallback? onNewConversation;
@@ -174,9 +207,23 @@ class _WorkspaceActions extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
-    final workspace = ref.watch(workspacesProvider.select((s) => s.byId(workspaceId)));
-    final prefs = ref.watch(workspacePrefsProvider);
-    final count = ref.watch(workspaceCountsProvider.select((c) => c[workspaceId] ?? 0));
+    if (ref.watch(activeHostProvider) != host || ref.watch(backendProvider) != backend) {
+      return SafeArea(top: false, child: SheetTitleBar(l10n.remoteWorkspace));
+    }
+    final codex = backend == ChatBackend.codex;
+    final prefsProvider = codex ? codexWorkspacePrefsProvider : workspacePrefsProvider;
+    final workspace = codex
+        ? ref
+              .watch(displayedCodexWorkspacesProvider)
+              .asData
+              ?.value
+              .where((w) => w.workspaceId == workspaceId)
+              .firstOrNull
+        : ref.watch(workspacesProvider.select((s) => s.byId(workspaceId)));
+    final prefs = ref.watch(prefsProvider);
+    final count = codex
+        ? workspace?.sessionIds.length ?? 0
+        : ref.watch(workspaceCountsProvider.select((c) => c[workspaceId] ?? 0));
     final local = ref.watch(activeConnectionProvider.select((c) => c.value?.isLocal ?? true));
     final theme = Theme.of(context);
     final colors = DshColors.of(context);
@@ -230,13 +277,15 @@ class _WorkspaceActions extends ConsumerWidget {
                   icon: pinned ? AppIcons.pinActive : AppIcons.pin,
                   title: pinned ? l10n.remoteWorkspaceUnpin : l10n.commonPin,
                   chevron: false,
-                  onTap: () => ref.read(workspacePrefsProvider.notifier).setPinned(workspaceId, !pinned),
+                  onTap: () => ref.read(prefsProvider.notifier).setPinned(workspaceId, !pinned),
                 ),
                 ListPageRow(
                   icon: AppIcons.workspaceGroup,
                   title: l10n.remoteWorkspaceGroup,
                   value: group ?? l10n.remoteWorkspaceUngrouped,
-                  onTap: () => SheetNavigator.of(context).push((_) => _GroupPicker(workspaceId: workspaceId)),
+                  onTap: () =>
+                      SheetNavigator.of(context)
+                          .push((_) => _GroupPicker(workspaceId: workspaceId, backend: backend, host: host)),
                 ),
               ],
             ),
@@ -262,24 +311,34 @@ class _WorkspaceActions extends ConsumerWidget {
 
 /// 「分组」: no group, the groups in use, or a new one.
 class _GroupPicker extends ConsumerWidget {
-  const _GroupPicker({required this.workspaceId});
+  const _GroupPicker({required this.workspaceId, required this.backend, required this.host});
 
   final String workspaceId;
+  final ChatBackend backend;
+  final HostRef host;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
-    final groups = ref.watch(workspaceGroupsProvider);
-    final current = ref.watch(workspacePrefsProvider.select((p) => p.groups[workspaceId]));
+    final codex = backend == ChatBackend.codex;
+    final provider = codex ? codexWorkspacePrefsProvider : workspacePrefsProvider;
+    final settings = ref.watch(provider);
+    final groups = codex
+        ? {
+            for (final workspace in ref.watch(displayedCodexWorkspacesProvider).asData?.value ?? const <Workspace>[])
+              ?settings.groups[workspace.workspaceId],
+          }
+        : ref.watch(workspaceGroupsProvider);
+    final current = settings.groups[workspaceId];
     final scheme = Theme.of(context).colorScheme;
-    final prefs = ref.read(workspacePrefsProvider.notifier);
     final sheet = SheetNavigator.of(context);
 
     Widget check(bool on) => on ? Icon(AppIcons.selected, size: 20, color: scheme.primary) : const SizedBox(width: 20);
 
     Future<void> pick(String? group) async {
-      await prefs.setGroup(workspaceId, group);
-      sheet.pop();
+      if (!context.mounted || ref.read(activeHostProvider) != host || ref.read(backendProvider) != backend) return;
+      await ref.read(provider.notifier).setGroup(workspaceId, group);
+      if (sheet.mounted) sheet.pop();
     }
 
     Future<void> create() async {

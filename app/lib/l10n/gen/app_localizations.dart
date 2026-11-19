@@ -30494,6 +30494,18 @@ abstract class L10n {
   /// **'文件夹和对话都会保留'**
   String get remoteWorkspaceRemoveBody;
 
+  /// No description provided for @remoteCodexWorkspaceRemoveBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'从手机工作区列表隐藏，可在「已隐藏的工作区」恢复。'**
+  String get remoteCodexWorkspaceRemoveBody;
+
+  /// No description provided for @remoteCodexWorkspaceHidden.
+  ///
+  /// In zh, this message translates to:
+  /// **'已隐藏的工作区'**
+  String get remoteCodexWorkspaceHidden;
+
   /// No description provided for @remoteWorkspaceRemove.
   ///
   /// In zh, this message translates to:

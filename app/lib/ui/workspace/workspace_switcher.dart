@@ -133,11 +133,15 @@ class WorkspaceSheet extends ConsumerWidget {
     final codex = backend == ChatBackend.codex;
     final host = ref.watch(activeHostProvider);
     final workspaces = codex
-        ? ref.watch(codexWorkspaceListProvider).asData?.value ?? const []
+        ? ref.watch(displayedCodexWorkspacesProvider).asData?.value ?? const []
         : ref.watch(workspacesProvider.select((s) => s.workspaces));
-    final sections = codex
-        ? [WorkspaceSection(WorkspaceSectionKind.rest, null, workspaces)]
-        : ref.watch(workspaceSectionsProvider);
+    final codexPrefs = codex ? ref.watch(codexWorkspacePrefsProvider) : const WorkspacePrefs();
+    final hidden = [
+      if (codex && codexPrefs.hidden.isNotEmpty)
+        for (final workspace in ref.watch(codexWorkspaceListProvider).asData?.value ?? const [])
+          if (codexPrefs.hidden.contains(workspace.workspaceId)) workspace,
+    ];
+    final sections = codex ? workspaceSections(workspaces, codexPrefs) : ref.watch(workspaceSectionsProvider);
     final selected = ref.watch(selectedWorkspaceProvider)?.workspaceId;
     final counts = codex
         ? {for (final workspace in workspaces) workspace.workspaceId: workspace.sessionIds.length}
@@ -193,8 +197,32 @@ class WorkspaceSheet extends ConsumerWidget {
                         count: counts[w.workspaceId] ?? 0,
                         selected: selected == w.workspaceId,
                         onTap: () => pick(w.workspaceId),
-                        onLongPress: codex ? null : () => showWorkspaceActions(context, w),
+                        onLongPress: () => showWorkspaceActions(context, w),
                       ),
+                  ],
+                ),
+              if (hidden.isNotEmpty)
+                SheetGroup(
+                  margin: margin,
+                  children: [
+                    ExpansionTile(
+                      leading: const Icon(Icons.visibility_off_outlined),
+                      title: Text(l10n.remoteCodexWorkspaceHidden),
+                      children: [
+                        for (final workspace in hidden)
+                          ListPageRow(
+                            icon: AppIcons.workspace,
+                            title: codexPrefs.aliases[workspace.workspaceId] ?? workspaceTitle(workspace),
+                            subtitle: displayPath(workspace.path, local: local),
+                            trailing: const Icon(Icons.visibility_outlined, size: 20),
+                            onTap: () {
+                              if (ref.read(activeHostProvider) == host && ref.read(backendProvider) == backend) {
+                                ref.read(codexWorkspacePrefsProvider.notifier).setHidden(workspace.workspaceId, false);
+                              }
+                            },
+                          ),
+                      ],
+                    ),
                   ],
                 ),
               if (!codex)

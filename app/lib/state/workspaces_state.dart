@@ -234,25 +234,29 @@ class WorkspacePrefs {
     this.pinned = const [],
     this.groups = const {},
     this.recent = const [],
+    this.aliases = const {},
+    this.hidden = const [],
   });
 
   factory WorkspacePrefs.fromJson(Object? json) {
     final map = json is Map ? json : const {};
-    final groups = map['groups'];
     return WorkspacePrefs(
       loaded: true,
       selected: map['selected'] is String ? map['selected'] as String : null,
       pinned: _strings(map['pinned']),
-      groups: {
-        if (groups is Map)
-          for (final MapEntry(:key, :value) in groups.entries)
-            if (key is String && value is String && value.trim().isNotEmpty) key: value.trim(),
-      },
+      groups: _names(map['groups']),
       recent: _strings(map['recent']),
+      aliases: _names(map['aliases']),
+      hidden: _strings(map['hidden']),
     );
   }
 
   static List<String> _strings(Object? v) => v is List ? v.whereType<String>().toList() : const [];
+  static Map<String, String> _names(Object? v) => {
+    if (v is Map)
+      for (final MapEntry(:key, :value) in v.entries)
+        if (key is String && value is String && value.trim().isNotEmpty) key: value.trim(),
+  };
 
   final bool loaded;
 
@@ -267,27 +271,43 @@ class WorkspacePrefs {
 
   /// Folders picked recently, newest first.
   final List<String> recent;
+  final Map<String, String> aliases;
+  final List<String> hidden;
 
   static const maxRecent = 4;
 
-  Map<String, Object?> toJson() => {'selected': ?selected, 'pinned': pinned, 'groups': groups, 'recent': recent};
+  Map<String, Object?> toJson() => {
+    'selected': ?selected,
+    'pinned': pinned,
+    'groups': groups,
+    'recent': recent,
+    if (aliases.isNotEmpty) 'aliases': aliases,
+    if (hidden.isNotEmpty) 'hidden': hidden,
+  };
 
   WorkspacePrefs copyWith({
     String? Function()? selected,
     List<String>? pinned,
     Map<String, String>? groups,
     List<String>? recent,
+    Map<String, String>? aliases,
+    List<String>? hidden,
   }) => WorkspacePrefs(
     loaded: loaded,
     selected: selected == null ? this.selected : selected(),
     pinned: pinned ?? this.pinned,
     groups: groups ?? this.groups,
     recent: recent ?? this.recent,
+    aliases: aliases ?? this.aliases,
+    hidden: hidden ?? this.hidden,
   );
 }
 
 /// [WorkspacePrefs] of the active host, in shared preferences.
 class WorkspacePrefsController extends Notifier<WorkspacePrefs> {
+  WorkspacePrefsController({this.backend = ChatBackend.deepseek});
+
+  final ChatBackend backend;
   String _key = '';
   Future<void> _loading = Future.value();
 
@@ -296,9 +316,10 @@ class WorkspacePrefsController extends Notifier<WorkspacePrefs> {
 
   @override
   WorkspacePrefs build() {
-    final key = keyFor(ref.watch(activeHostProvider));
+    final host = ref.watch(activeHostProvider);
+    final key = backend == ChatBackend.codex ? 'codex.${keyFor(host)}' : keyFor(host);
     _key = key;
-    _loading = _load(key, ref.read(activeHostProvider).isLocal);
+    _loading = _load(key, backend == ChatBackend.deepseek && host.isLocal);
     return const WorkspacePrefs();
   }
 
@@ -395,6 +416,19 @@ class WorkspacePrefsController extends Notifier<WorkspacePrefs> {
     return _save(state.copyWith(groups: groups));
   }
 
+  Future<void> renameDisplay(String workspaceId, String title) =>
+      _save(state.copyWith(aliases: {...state.aliases, workspaceId: title}));
+
+  Future<void> setHidden(String workspaceId, bool hidden) => _save(
+    state.copyWith(
+      hidden: [
+        if (hidden) workspaceId,
+        for (final id in state.hidden)
+          if (id != workspaceId) id,
+      ],
+    ),
+  );
+
   /// Remembers a folder the user picked from.
   Future<void> remember(String folder) => _save(
     state.copyWith(
@@ -421,12 +455,47 @@ class WorkspacePrefsController extends Notifier<WorkspacePrefs> {
 
 final workspacePrefsProvider = NotifierProvider<WorkspacePrefsController, WorkspacePrefs>(WorkspacePrefsController.new);
 
+final codexWorkspacePrefsProvider = NotifierProvider<WorkspacePrefsController, WorkspacePrefs>(
+  () => WorkspacePrefsController(backend: ChatBackend.codex),
+);
+
+final displayedCodexWorkspacesProvider = Provider.autoDispose<AsyncValue<List<Workspace>>>((ref) {
+  final prefs = ref.watch(codexWorkspacePrefsProvider);
+  return ref
+      .watch(codexWorkspaceListProvider)
+      .whenData(
+        (workspaces) => [
+          for (final workspace in workspaces)
+            if (!prefs.hidden.contains(workspace.workspaceId)) _codexDisplayWorkspace(workspace, prefs),
+        ],
+      );
+});
+
+Workspace _codexDisplayWorkspace(Workspace workspace, WorkspacePrefs prefs) {
+  final alias = prefs.aliases[workspace.workspaceId];
+  return alias == null
+      ? workspace
+      : Workspace(
+          workspaceId: workspace.workspaceId,
+          path: workspace.path,
+          title: alias,
+          sessionIds: workspace.sessionIds,
+          createdAt: workspace.createdAt,
+          updatedAt: workspace.updatedAt,
+        );
+}
+
 // ── Derived views ────────────────────────────────────────────────────────────
 
 /// The workspace the drawer shows and new conversations start in; null for
 /// 全部对话 (or while the selection isn't on the host's list).
 final selectedWorkspaceProvider = Provider<Workspace?>((ref) {
-  if (ref.watch(backendProvider) == ChatBackend.codex) return ref.watch(selectedCodexWorkspaceProvider);
+  if (ref.watch(backendProvider) == ChatBackend.codex) {
+    final selected = ref.watch(selectedCodexWorkspaceProvider);
+    final prefs = ref.watch(codexWorkspacePrefsProvider);
+    if (selected == null || prefs.hidden.contains(selected.workspaceId)) return null;
+    return _codexDisplayWorkspace(selected, prefs);
+  }
   final selected = ref.watch(workspacePrefsProvider.select((p) => p.selected));
   if (selected == null) return null;
   return ref.watch(workspacesProvider).byId(selected);
