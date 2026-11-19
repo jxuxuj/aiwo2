@@ -56,7 +56,7 @@ jobs:
         working-directory: app
         run: |
           # Flutter's included Gradle build defaults to the plugin portal alone.
-          # Resolve Kotlin artifacts directly from Maven Central on CI.
+          # Use the Google-hosted Maven Central mirror for Kotlin on CI.
           gradle_home="${GRADLE_USER_HOME:-$HOME/.gradle}"
           mkdir -p "$gradle_home/init.d"
           cat > "$gradle_home/init.d/aiwo-flutter-plugins.gradle" <<'GRADLE'
@@ -64,6 +64,10 @@ jobs:
               def flutterGradle = new File(System.getenv('FLUTTER_ROOT'), 'packages/flutter_tools/gradle')
               if (settings.settingsDir.canonicalFile == flutterGradle.canonicalFile) {
                   settings.pluginManagement.repositories {
+                      maven {
+                          url = uri('https://maven-central.storage-download.googleapis.com/maven2')
+                          content { includeGroupByRegex('org[.]jetbrains[.]kotlin([.].*)?') }
+                      }
                       mavenCentral()
                       gradlePluginPortal()
                   }
