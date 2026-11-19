@@ -3,10 +3,15 @@ import 'dart:convert';
 import 'package:dsh_app/pets/pet_conference.dart';
 import 'package:dsh_app/pets/pet_prefs.dart';
 import 'package:dsh_app/state/backend_state.dart';
+import 'package:dsh_app/state/connection_state.dart';
 import 'package:dsh_app/state/hosts_state.dart';
+import 'package:dsh_app/ui/pets/pet_conference_page.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../chat/support/harness.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -127,6 +132,45 @@ void main() {
     restarted.read(backendProvider.notifier).set(ChatBackend.codex);
     expect(restarted.read(activePetPackIdProvider), 'deepy-whale');
     expect(restarted.read(petPackIdProvider(ChatBackend.deepseek)), 'whale-girl');
+  });
+
+  testWidgets('saved rooms open their conversations without connecting to a host', (tester) async {
+    const room = PetConference(
+      id: 'saved',
+      title: '上次大会',
+      deepseek: ConferenceParticipant(HostRef.local, 'dsh-source', 'DSH', branch: 'dsh-branch'),
+      codex: ConferenceParticipant(HostRef.relay('pc'), 'codex-source', 'Codex', branch: 'codex-branch'),
+      messages: [
+        ConferenceMessage(null, '我们已经见过'),
+        ConferenceMessage(ChatBackend.deepseek, '第一次回应'),
+        ConferenceMessage(ChatBackend.codex, '第二次回应'),
+      ],
+    );
+    SharedPreferences.setMockInitialValues({
+      'pet.conferences.v1': jsonEncode([room.toJson()]),
+      'pet.pack': 'none',
+      'pet.codex.pack': 'none',
+    });
+    await tester.pumpWidget(
+      testApp(
+        const PetConferencePage(),
+        overrides: [connectionForHostProvider.overrideWith((_, _) => const AsyncData(null))],
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('上次大会'));
+    await tester.pumpAndSettle();
+    expect(find.text('我们已经见过'), findsOneWidget);
+    expect(find.text('第一次回应'), findsOneWidget);
+    expect(find.text('第二次回应'), findsOneWidget);
+    expect(find.widgetWithIcon(IconButton, Icons.arrow_upward), findsOneWidget);
+    expect(tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.arrow_upward)).onPressed, isNull);
+    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.pumpAndSettle();
+    expect(find.text('删除此大会的历史和它创建的两个聊天分支？原来的两条对话会保留。'), findsOneWidget);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(find.text('我们已经见过'), findsOneWidget);
   });
 }
 
