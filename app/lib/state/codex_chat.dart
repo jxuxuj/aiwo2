@@ -29,6 +29,8 @@ mixin _CodexChat on Notifier<ChatState> {
   ({String text, int imageCount, int afterSeq, DateTime expires})? _codexEcho;
   bool _codexSending = false;
   String? _codexPermission;
+  String? _codexApprovalsReviewer;
+  List<ApprovalRequest> _codexApprovals = const [];
   Object? _codexThreadAction;
   int _codexPermissionRevision = 0;
 
@@ -56,6 +58,8 @@ mixin _CodexChat on Notifier<ChatState> {
       _activeCodexTurn = null;
       _codexEcho = null;
       _codexPermission = null;
+      _codexApprovalsReviewer = null;
+      _codexApprovals = const [];
     }
     final owner = _codexOwner = Object();
     _codexConnection = client == null ? null : (host: host, client: client, generation: client.mux.generation);
@@ -106,6 +110,8 @@ mixin _CodexChat on Notifier<ChatState> {
       title: title,
       model: ref.read(_codexThreadModelsProvider)[(host, sessionId)],
       codexPermission: _codexPermission,
+      codexApprovalsReviewer: _codexApprovalsReviewer,
+      approvals: _codexApprovals,
       codexPermissionEditable: _canSetCodexPermission,
       running: _activeCodexTurn != null,
       hasMoreHistory: _codexHasMore,
@@ -138,10 +144,14 @@ mixin _CodexChat on Notifier<ChatState> {
   Future<bool> _readCodex(Object? owner, _CodexConnection connection) async {
     final permissionRevision = _codexPermissionRevision;
     try {
-      final page = await CodexClient(connection.client.carrier).readHistory(_threadId);
+      final page = await CodexClient(connection.client.carrier).readHistory(_threadId, sessionId: sessionId);
       if (!_ownsCodex(owner, connection)) return false;
+      final approvalIds = page.approvals.map((request) => request.eventId).join(',');
+      final approvalsChanged = approvalIds != _codexApprovals.map((request) => request.eventId).join(',');
+      if (approvalsChanged) _codexApprovals = page.approvals;
       if (permissionRevision == _codexPermissionRevision && _codexThreadAction == null) {
         _codexPermission = page.permissionPreset ?? _codexPermission;
+        _codexApprovalsReviewer = page.approvalsReviewer ?? _codexApprovalsReviewer;
       }
       final oldest = _codexTranscript.oldestSeq;
       final hadOlder = oldest != null && page.oldestSeq != null && oldest < page.oldestSeq!;
@@ -181,12 +191,14 @@ mixin _CodexChat on Notifier<ChatState> {
       final running = _activeCodexTurn != null || _codexEcho != null;
       final stopping = state.stopping && _activeCodexTurn != null;
       if (changed ||
+          approvalsChanged ||
           state.loading ||
           state.syncError != null ||
           state.running != running ||
           state.stopping != stopping ||
           state.hasMoreHistory != _codexHasMore ||
           state.codexPermission != _codexPermission ||
+          state.codexApprovalsReviewer != _codexApprovalsReviewer ||
           state.codexPermissionEditable != _canSetCodexPermission ||
           (model != null && state.model != model) ||
           !identical(state.pending, pending)) {
@@ -247,6 +259,8 @@ mixin _CodexChat on Notifier<ChatState> {
       title: title ?? state.title,
       model: model ?? state.model,
       codexPermission: _codexPermission,
+      codexApprovalsReviewer: _codexApprovalsReviewer,
+      approvals: _codexApprovals,
       codexPermissionEditable: _canSetCodexPermission,
       running: _activeCodexTurn != null || _codexEcho != null,
       stopping: stopping ?? state.stopping,
@@ -297,24 +311,51 @@ mixin _CodexChat on Notifier<ChatState> {
   void _initializeCodexThread(CodexThreadSettings settings) {
     if (settings.threadId != _threadId) return;
     _codexPermission = settings.permissionPreset;
+    _codexApprovalsReviewer = settings.approvalsReviewer;
     _codexPermissionRevision++;
     _publishCodex();
   }
 
-  Future<bool> _setCodexPermission(String preset) async {
+  Future<bool> _setCodexPermission(String preset) => _changeCodexPermission(preset);
+
+  Future<void> _respondCodexApproval(ApprovalRequest request, ApprovalDecision decision) async {
     final owner = _codexOwner;
     final connection = _codexConnection;
-    if (connection == null || !_ownsCodex(owner, connection) || !codexPermissionPresets.contains(preset)) return false;
+    if (connection == null ||
+        !_ownsCodex(owner, connection) ||
+        !_codexApprovals.any((pending) => pending.eventId == request.eventId))
+      return;
+    try {
+      await CodexClient(connection.client.carrier).respondApproval(request.eventId, decision);
+      if (!_ownsCodex(owner, connection)) return;
+      _codexApprovals = _codexApprovals.where((pending) => pending.eventId != request.eventId).toList();
+      _publishCodex();
+    } catch (error) {
+      if (_ownsCodex(owner, connection)) {
+        state = state.copyWith(error: chatErrorText(error, action: appL10n.stateChatApprovalFailed));
+      }
+    }
+  }
+
+  Future<bool> _changeCodexPermission(String value, {bool reviewer = false}) async {
+    final owner = _codexOwner;
+    final connection = _codexConnection;
+    final options = reviewer ? codexApprovalReviewers : codexPermissionPresets;
+    if (connection == null || !_ownsCodex(owner, connection) || !options.contains(value)) return false;
     if (!_canSetCodexPermission) return false;
     final change = _codexThreadAction = Object();
     _codexPermissionRevision++;
     state = state.copyWith(codexPermissionEditable: false, clearError: true);
     bool current() => identical(_codexThreadAction, change) && _ownsCodex(owner, connection);
     try {
-      final reply = await CodexClient(connection.client.carrier).resumeThread(_threadId, permissionPreset: preset);
+      final client = CodexClient(connection.client.carrier);
+      final reply = reviewer
+          ? await client.setApprovalsReviewer(_threadId, value)
+          : await client.resumeThread(_threadId, permissionPreset: value);
       if (!current()) return false;
       _codexPermission = reply.permissionPreset ?? _codexPermission;
-      if (reply.permissionPreset != preset) {
+      _codexApprovalsReviewer = reply.approvalsReviewer ?? _codexApprovalsReviewer;
+      if ((reviewer ? reply.approvalsReviewer : reply.permissionPreset) != value) {
         state = state.copyWith(error: appL10n.featuresSwitchFailed);
         return false;
       }
@@ -429,10 +470,15 @@ mixin _CodexChat on Notifier<ChatState> {
           ? body
           : [if (body.isNotEmpty) body, '${appL10n.stateWorkspaceFilesHint}\n${paths.join('\n')}'].join('\n\n');
       final codex = CodexClient(connection.client.carrier);
+      if (_activeCodexTurn == null) {
+        await codex.watchApprovals(_threadId);
+        if (!current()) return false;
+      }
       if (_activeCodexTurn == null && _codexCursor >= 0) {
         final reply = await codex.resumeThread(_threadId, model: selection?.model);
         if (!current()) return false;
         _codexPermission = reply.permissionPreset ?? _codexPermission;
+        _codexApprovalsReviewer = reply.approvalsReviewer ?? _codexApprovalsReviewer;
       }
       final afterSeq = _codexCursor;
       final expected = _activeCodexTurn;

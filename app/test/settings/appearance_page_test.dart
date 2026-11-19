@@ -9,6 +9,7 @@
 import 'package:dsh_app/app.dart';
 import 'package:dsh_app/state/app_icon_state.dart';
 import 'package:dsh_app/state/appearance_state.dart';
+import 'package:dsh_app/state/backend_state.dart';
 import 'package:dsh_app/state/settings_state.dart';
 import 'package:dsh_app/state/tile_style_state.dart';
 import 'package:dsh_app/ui/settings/appearance/appearance_page.dart';
@@ -101,7 +102,7 @@ void main() {
 
   testWidgets('a preset swatch switches the whole app and is stored', (tester) async {
     final container = await _pumpApp(tester);
-    expect(_scheme(tester).primary, AppAccent.mist.seed);
+    expect(_scheme(tester).primary, AppAccent.graphite.seed);
 
     await tester.tap(find.bySemanticsLabel('配色：琥珀'));
     await tester.pumpAndSettle();
@@ -112,6 +113,23 @@ void main() {
     expect(prefs.getString('appearance.preset'), 'amber');
     expect(prefs.getString('appearance.accent_source'), 'preset');
     expect(prefs.getInt(AppearanceController.notifyColorKey), AppAccent.amber.seed.toARGB32());
+  });
+
+  testWidgets('Codex and DeepSeek colors are editable and saved independently', (tester) async {
+    final container = await _pumpApp(tester);
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Codex'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('配色：琥珀'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(accentProvider), AppAccent.graphite);
+    expect(container.read(codexAppearanceProvider).presetId, 'amber');
+    container.read(backendProvider.notifier).set(ChatBackend.codex);
+    await tester.pumpAndSettle();
+    expect(_scheme(tester).primary, AppAccent.amber.seed);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('appearance.codex.preset'), 'amber');
+    expect(prefs.getString('appearance.preset'), isNull);
   });
 
   testWidgets('the stored palette comes back at launch', (tester) async {

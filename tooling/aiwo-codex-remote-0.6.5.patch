@@ -1,0 +1,357 @@
+diff --git a/packages/plugin/src/codex/domain.ts b/packages/plugin/src/codex/domain.ts
+index 295796b..746f7db 100644
+--- a/packages/plugin/src/codex/domain.ts
++++ b/packages/plugin/src/codex/domain.ts
+@@ -38,6 +38,7 @@ const CODEX_DIRECTORY_ENTRY_LIMIT = 500
+ const TURN_SILENCE_MESSAGE = 'CodeX turn timed out waiting for the App Server. The model provider may be unavailable or rate-limited. Please try again later.'
+ 
+ interface PendingApproval {
++  details?: { command?: string; reason?: string }
+   upstreamId: string | number
+   connectionId: string
+   threadId: string
+@@ -87,6 +88,7 @@ export class CodexRemoteDomain {
+   private readonly turnWatchdogs = new Map<string, ReturnType<typeof setTimeout>>()
+   private readonly approvals = new Map<string, PendingApproval>()
+   private readonly permissionPresets = new Map<string, CodexPermissionPreset>()
++  private readonly approvalsReviewers = new Map<string, 'user' | 'auto_review'>()
+   private approvalExpiryTimer?: ReturnType<typeof setTimeout>
+   private restartTimer?: ReturnType<typeof setTimeout>
+   private restartAttempt = 0
+@@ -209,6 +211,19 @@ export class CodexRemoteDomain {
+     if (call.method === 'account/read') {
+       return sanitizeAccount(await this.callUpstream(call.method, call.params))
+     }
++    if (call.method === 'account/rateLimits/read') {
++      const value = await this.callUpstream(call.method, { excludeResetCreditDetails: true })
++      if (!isRecord(value)) throw new RpcError('CODEX_INVALID_RESPONSE', 'Invalid CodeX usage response.')
++      // Expose only the quota buckets; account identifiers and billing details stay on the Host.
++      return {
++        rateLimits: sanitizeRateLimitSnapshot(value.rateLimits),
++        rateLimitsByLimitId: Object.fromEntries(
++          Object.entries(isRecord(value.rateLimitsByLimitId) ? value.rateLimitsByLimitId : {}).map(
++            ([id, bucket]) => [id, sanitizeRateLimitSnapshot(bucket)],
++          ),
++        ),
++      }
++    }
+     if (call.method === 'project/list') {
+       return sanitizeProjectList(await this.callUpstream(call.method, call.params))
+     }
+@@ -268,6 +283,10 @@ export class CodexRemoteDomain {
+         ...page,
+         ...(activeTurnId === undefined ? {} : { activeTurnId }),
+         permissionPreset: this.permissionPresets.get(threadId!) ?? null,
++        approvalsReviewer: this.approvalsReviewers.get(threadId!) ?? null,
++        approvals: [...this.approvals].flatMap(([requestHandle, approval]) =>
++          approval.connectionId === connectionId && approval.threadId === threadId && approval.details !== undefined
++            ? [{ requestHandle, method: approval.method, ...approval.details }] : []),
+       }
+     }
+     if (call.method === 'dsh/sessionAttachment') {
+@@ -287,6 +306,16 @@ export class CodexRemoteDomain {
+     const allowedThread = threadId === undefined ? undefined : await this.readKnownThread(threadId)
+     assertCurrent()
+ 
++    if (call.method === 'dsh/approvalReviewer/set') {
++      if (this.turnOwners.has(threadId!)) throw new RpcError('CODEX_THREAD_BUSY', 'A CodeX turn is active.')
++      return this.changeApprovalsReviewer(threadId!, call.params.approvalsReviewer as 'user' | 'auto_review', allowedThread!, assertCurrent)
++    }
++    if (call.method === 'dsh/approvals/watch') {
++      const peer = this.peers.get(connectionId)
++      if (!peer) throw new RpcError('CODEX_CONNECTION_CLOSED', 'The CodeX connection is closed.')
++      peer.polledApprovalThread = threadId
++      return { watching: true }
++    }
+     if (call.method === 'thread/resume' && call.params.permissionPreset !== undefined) {
+       const owner = this.turnOwners.get(threadId!)
+       if (owner !== undefined && owner.connectionId !== connectionId) {
+@@ -434,6 +463,7 @@ export class CodexRemoteDomain {
+     this.clearAllTurnWatchdogs()
+     this.turnOwners.clear()
+     this.permissionPresets.clear()
++    this.approvalsReviewers.clear()
+     this.knownThreadPromises.clear()
+     this.approvals.clear()
+     if (this.approvalExpiryTimer !== undefined) clearTimeout(this.approvalExpiryTimer)
+@@ -458,6 +488,7 @@ export class CodexRemoteDomain {
+     this.clearAllTurnWatchdogs()
+     this.turnOwners.clear()
+     this.permissionPresets.clear()
++    this.approvalsReviewers.clear()
+     if (this.approvalExpiryTimer !== undefined) clearTimeout(this.approvalExpiryTimer)
+     this.approvalExpiryTimer = undefined
+     this.approvals.clear()
+@@ -526,6 +557,7 @@ export class CodexRemoteDomain {
+     this.clearAllTurnWatchdogs()
+     this.turnOwners.clear()
+     this.permissionPresets.clear()
++    this.approvalsReviewers.clear()
+     this.approvals.clear()
+     if (this.approvalExpiryTimer !== undefined) clearTimeout(this.approvalExpiryTimer)
+     this.approvalExpiryTimer = undefined
+@@ -588,7 +620,10 @@ export class CodexRemoteDomain {
+     if (message.method === 'thread/settings/updated' && threadId !== undefined) {
+       this.rememberPermission(threadId, message.params)
+     }
+-    if (message.method === 'thread/closed' && threadId !== undefined) this.permissionPresets.delete(threadId)
++    if (message.method === 'thread/closed' && threadId !== undefined) {
++      this.permissionPresets.delete(threadId)
++      this.approvalsReviewers.delete(threadId)
++    }
+     if (message.method === 'turn/completed' && threadId !== undefined) {
+       this.turnOwners.delete(threadId)
+       this.clearTurnWatchdog(threadId)
+@@ -629,6 +664,52 @@ export class CodexRemoteDomain {
+     const preset = codexPermissionPresetFromResponse(value)
+     if (preset === undefined) this.permissionPresets.delete(threadId)
+     else this.permissionPresets.set(threadId, preset)
++    const settings = readApprovalSettings(value)
++    if (settings?.reviewer !== undefined) this.approvalsReviewers.set(threadId, settings.reviewer)
++  }
++
++  private async changeApprovalsReviewer(
++    threadId: string,
++    reviewer: 'user' | 'auto_review',
++    allowed: { thread: Record<string, unknown> },
++    assertCurrent: () => void,
++  ): Promise<unknown> {
++    const appServer = this.requireAppServer()
++    const matches = (value: unknown) => {
++      const settings = readApprovalSettings(value)
++      return settings?.reviewer === reviewer && settings.policy === 'on-request'
++    }
++    // Resume without overrides to subscribe and read the actual settings. A brand
++    // new thread can still be loaded before Codex has persisted its history.
++    try {
++      const current = await this.callUpstream('thread/resume', { threadId, excludeTurns: true })
++      assertCurrent()
++      this.rememberPermission(threadId, current)
++      if (matches(current)) return { thread: allowed.thread, approvalsReviewer: reviewer }
++    } catch (error) {
++      assertCurrent()
++      if (!isUnpersistedThreadError(error)) throw error
++    }
++    let confirm!: () => void
++    const confirmed = new Promise<void>(resolve => { confirm = resolve })
++    const stop = appServer.onInbound(message => {
++      if (message.kind === 'notification' && message.method === 'thread/settings/updated'
++        && extractThreadId(message.params) === threadId && matches(message.params)) confirm()
++    })
++    let timer: ReturnType<typeof setTimeout> | undefined
++    try {
++      await this.callUpstream('thread/settings/update', { threadId, approvalPolicy: 'on-request', approvalsReviewer: reviewer })
++      const applied = await Promise.race([
++        confirmed.then(() => true),
++        new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), 5000) }),
++      ])
++      assertCurrent()
++      if (!applied) throw new RpcError('CODEX_APPROVAL_UNCONFIRMED', 'CodeX did not confirm its approval reviewer.')
++      return { thread: allowed.thread, approvalsReviewer: reviewer }
++    } finally {
++      if (timer !== undefined) clearTimeout(timer)
++      stop()
++    }
+   }
+ 
+   private async changeThreadPermission(
+@@ -705,17 +786,23 @@ export class CodexRemoteDomain {
+     const threadId = extractThreadId(message.params)
+     const owner = threadId === undefined ? undefined : this.turnOwners.get(threadId)
+     const peer = owner === undefined ? undefined : this.peers.get(owner.connectionId)
+-    if (threadId === undefined || owner === undefined || peer === undefined || !peer.hasThreadSubscription(threadId)) {
++    const poll = threadId !== undefined && peer?.polledApprovalThread === threadId
++    if (threadId === undefined || owner === undefined || peer === undefined || (!poll && !peer.hasThreadSubscription(threadId))) {
+       await appServer.respond(message.id, { decision: 'decline' })
+       return
+     }
+     const requestHandle = randomUUID()
++    const params = isRecord(message.params) ? message.params : {}
+     this.approvals.set(requestHandle, {
+       upstreamId: message.id,
+       connectionId: owner.connectionId,
+       threadId,
+       method: message.method,
+       expiresAt: Date.now() + APPROVAL_TTL_MS,
++      ...(poll ? { details: {
++        ...(typeof params.command === 'string' ? { command: params.command } : {}),
++        ...(typeof params.reason === 'string' ? { reason: params.reason } : {}),
++      } } : {}),
+     })
+     this.scheduleApprovalExpiry()
+     try {
+@@ -1553,6 +1640,30 @@ function optionalInteger(value: unknown): number | undefined {
+   return typeof value === 'number' && Number.isSafeInteger(value) ? value : undefined
+ }
+ 
++function readApprovalSettings(value: unknown): { reviewer: 'user' | 'auto_review' | undefined; policy: unknown } | undefined {
++  if (!isRecord(value)) return undefined
++  const settings = isRecord(value.threadSettings) ? value.threadSettings : value
++  const reviewer = settings.approvalsReviewer
++  return {
++    reviewer: reviewer === 'guardian_subagent' ? 'auto_review' as const
++      : reviewer === 'user' || reviewer === 'auto_review' ? reviewer : undefined,
++    policy: settings.approvalPolicy,
++  }
++}
++
++function sanitizeRateLimitSnapshot(value: unknown) {
++  if (!isRecord(value)) return null
++  const window = (item: unknown) => {
++    if (!isRecord(item) || typeof item.usedPercent !== 'number' || !Number.isFinite(item.usedPercent)) return null
++    return { usedPercent: item.usedPercent, windowDurationMins: optionalInteger(item.windowDurationMins), resetsAt: optionalInteger(item.resetsAt) }
++  }
++  return {
++    limitName: typeof value.limitName === 'string' ? value.limitName : undefined,
++    planType: typeof value.planType === 'string' ? value.planType : undefined,
++    primary: window(value.primary), secondary: window(value.secondary),
++  }
++}
++
+ interface CodexPermissionMapping {
+   params: Record<string, unknown>
+   approvalPolicy?: 'on-request' | 'never'
+diff --git a/packages/plugin/src/codex/method-policy.ts b/packages/plugin/src/codex/method-policy.ts
+index 5782e02..8a8978c 100644
+--- a/packages/plugin/src/codex/method-policy.ts
++++ b/packages/plugin/src/codex/method-policy.ts
+@@ -22,12 +22,14 @@ const imageInput = z.object({
+ }).strict()
+ const input = z.array(z.union([textInput, imageInput])).min(1).max(16)
+ const permissionPreset = z.enum(['workspace-write', 'danger-full-access'])
++const approvalsReviewer = z.enum(['user', 'auto_review'])
+ const projectRoot = z.object({
+   path: z.string().min(1).max(4096),
+ }).strict()
+ 
+ const schemas = {
+   'account/read': z.object({ refreshToken: z.literal(false).optional() }).strict(),
++  'account/rateLimits/read': z.object({}).strict(),
+   'model/list': z.object({
+     cursor,
+     limit: z.number().int().min(1).max(100).optional(),
+@@ -74,12 +76,15 @@ const schemas = {
+     model: z.string().min(1).max(128).optional(),
+     personality: z.string().min(1).max(64).optional(),
+     permissionPreset: permissionPreset.optional(),
++    approvalsReviewer: approvalsReviewer.optional(),
+   }).strict(),
+   'thread/resume': z.object({
+     threadId: id,
+     model: z.string().min(1).max(128).optional(),
+     permissionPreset: permissionPreset.optional(),
+   }).strict(),
++  'dsh/approvalReviewer/set': z.object({ threadId: id, approvalsReviewer }).strict(),
++  'dsh/approvals/watch': z.object({ threadId: id }).strict(),
+   'thread/fork': z.object({
+     threadId: id,
+     lastTurnId: id.optional(),
+diff --git a/packages/plugin/src/codex/peer-bridge.ts b/packages/plugin/src/codex/peer-bridge.ts
+index 8025586..0fb65a2 100644
+--- a/packages/plugin/src/codex/peer-bridge.ts
++++ b/packages/plugin/src/codex/peer-bridge.ts
+@@ -68,6 +68,7 @@ const INLINE_TRANSFER_RESPONSE_BYTES = 2 * 1024 * 1024
+ 
+ /** Per-authenticated-connection state for the Codex Remote domain. */
+ export class CodexPeerBridge {
++  polledApprovalThread?: string
+   compactHistoryEnabled = false
+   private readonly streams = new Map<string, string>()
+   private readonly incomingTransfers = new Map<string, IncomingTransfer>()
+diff --git a/packages/plugin/tests/codex-domain.test.ts b/packages/plugin/tests/codex-domain.test.ts
+index c8b3dc8..65181c1 100644
+--- a/packages/plugin/tests/codex-domain.test.ts
++++ b/packages/plugin/tests/codex-domain.test.ts
+@@ -25,6 +25,58 @@ const cleanupScenario1 = async () => {
+ afterEach(cleanupScenario1)
+ 
+ describe('CodexRemoteDomain', () => {
++  it('returns only the Codex usage windows and enables acknowledged reviewer changes', async () => {
++    const { root } = await directories()
++    const app = new FakeAppServer(root)
++    const original = app.call.bind(app)
++    vi.spyOn(app, 'call').mockImplementation(async (method, params) => {
++      if (method === 'account/rateLimits/read') {
++        expect(params).toEqual({ excludeResetCreditDetails: true })
++        return { accountId: 'private', rateLimits: { planType: 'plus', primary: { usedPercent: 72, windowDurationMins: 300 } } }
++      }
++      if (method === 'thread/settings/update') {
++        expect(params).toEqual({ threadId: 'allowed-thread', approvalPolicy: 'on-request', approvalsReviewer: 'auto_review' })
++        app.emit({ kind: 'notification', method: 'thread/settings/updated', params: {
++          threadId: 'allowed-thread', threadSettings: { approvalPolicy: 'on-request', approvalsReviewer: 'guardian_subagent' },
++        } })
++        return {}
++      }
++      return original(method, params)
++    })
++    const domain = new CodexRemoteDomain({ enabled: true, binary: 'codex' }, logger(), () => app)
++    await domain.start()
++    try {
++      expect(await domain.call('phone', { method: 'account/rateLimits/read', params: {} })).toEqual({
++        rateLimits: { planType: 'plus', primary: { usedPercent: 72, windowDurationMins: 300 }, secondary: null },
++        rateLimitsByLimitId: {},
++      })
++      const params = { threadId: 'allowed-thread', approvalsReviewer: 'auto_review' }
++      await expect(domain.call('phone', { method: 'dsh/approvalReviewer/set', params })).resolves.toMatchObject({ approvalsReviewer: 'auto_review' })
++      await expect(domain.call('phone', { method: 'dsh/approvalReviewer/set', params: { ...params, sandbox: 'danger-full-access' } })).rejects.toMatchObject({ code: 'INVALID_MESSAGE' })
++    } finally { await domain.close() }
++  })
++
++  it('delivers a pending polled approval only to the owning phone', async () => {
++    const { root } = await directories()
++    const app = new FakeAppServer(root)
++    const domain = new CodexRemoteDomain({ enabled: true, binary: 'codex' }, logger(), () => app)
++    await domain.start()
++    try {
++      const owner = domain.createPeer({ connectionId: 'phone', peerDeviceId: 'phone' } as never, async () => undefined)!
++      const other = domain.createPeer({ connectionId: 'other', peerDeviceId: 'other' } as never, async () => undefined)!
++      const threadId = 'allowed-thread'
++      await owner.call({ method: 'dsh/approvals/watch', params: { threadId } })
++      await owner.call({ method: 'turn/start', params: { threadId, input: [{ type: 'text', text: 'Approve test' }] } })
++      app.emit({ kind: 'request', id: 90, method: 'item/commandExecution/requestApproval', params: { threadId, command: 'echo ok' } })
++      await expect(other.call({ method: 'dsh/sessionHistory', params: { threadId } })).resolves.toMatchObject({ approvals: [] })
++      const history = await owner.call({ method: 'dsh/sessionHistory', params: { threadId } }) as { approvals: Array<{ requestHandle: string; command: string }> }
++      expect(history.approvals).toHaveLength(1)
++      expect(history.approvals[0]?.command).toBe('echo ok')
++      await owner.respond({ requestHandle: history.approvals[0]!.requestHandle, decision: 'decline' })
++      expect(app.responses).toContainEqual({ id: 90, result: { decision: 'decline' } })
++    } finally { await domain.close() }
++  })
++
+   it('enables and disables CodeX live without replacing authenticated peers', async () => {
+     const app = new FakeAppServer('/unused')
+     const domain = new CodexRemoteDomain({ enabled: false, binary: 'codex' }, logger(), () => app)
+@@ -1297,7 +1349,7 @@ describe('CodexRemoteDomain', () => {
+ })
+ 
+ class FakeAppServer implements CodexAppServerLike {
+-  private handler?: CodexAppServerInboundHandler
++  private readonly handlers = new Set<CodexAppServerInboundHandler>()
+   private unavailableHandler?: CodexAppServerUnavailableHandler
+   private ready = false
+   readonly responses: Array<{ id: string | number; result?: unknown; error?: unknown }> = []
+@@ -1465,14 +1517,14 @@ class FakeAppServer implements CodexAppServerLike {
+     this.responses.push({ id, error: { code, message } })
+   }
+   onInbound(handler: CodexAppServerInboundHandler): () => void {
+-    this.handler = handler
+-    return () => { this.handler = undefined }
++    this.handlers.add(handler)
++    return () => { this.handlers.delete(handler) }
+   }
+   onUnavailable(handler: CodexAppServerUnavailableHandler): () => void {
+     this.unavailableHandler = handler
+     return () => { this.unavailableHandler = undefined }
+   }
+-  emit(message: CodexAppServerInbound): void { this.handler?.(message) }
++  emit(message: CodexAppServerInbound): void { for (const handler of this.handlers) handler(message) }
+   crash(code: string): void {
+     this.ready = false
+     this.unavailableHandler?.(code)
+@@ -1536,4 +1588,4 @@ describe('codexBinaryCandidates', () => {
+       else process.env.LOCALAPPDATA = previous
+     }
+   })
+-})
+\ No newline at end of file
++})

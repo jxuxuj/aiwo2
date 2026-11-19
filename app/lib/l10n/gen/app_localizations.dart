@@ -15482,6 +15482,90 @@ abstract class L10n {
   /// **'恢复默认'**
   String get featuresPermissionResetDefault;
 
+  /// No description provided for @featuresCodexApprovalTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'审批方式'**
+  String get featuresCodexApprovalTitle;
+
+  /// No description provided for @featuresCodexAskApproval.
+  ///
+  /// In zh, this message translates to:
+  /// **'请求批准'**
+  String get featuresCodexAskApproval;
+
+  /// No description provided for @featuresCodexReviewForMe.
+  ///
+  /// In zh, this message translates to:
+  /// **'帮我批准'**
+  String get featuresCodexReviewForMe;
+
+  /// No description provided for @featuresCodexAskApprovalHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'操作需要审批时，由你决定是否允许。'**
+  String get featuresCodexAskApprovalHint;
+
+  /// No description provided for @featuresCodexReviewForMeHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'由 Codex 审核审批请求，按风险决定是否允许。'**
+  String get featuresCodexReviewForMeHint;
+
+  /// No description provided for @featuresCodexUsage.
+  ///
+  /// In zh, this message translates to:
+  /// **'Codex 用量'**
+  String get featuresCodexUsage;
+
+  /// No description provided for @featuresCodexUsageUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前连接的 Codex 账号没有返回用量额度。'**
+  String get featuresCodexUsageUnavailable;
+
+  /// No description provided for @featuresCodexUsageHostUpdate.
+  ///
+  /// In zh, this message translates to:
+  /// **'更新电脑上的 AI窝 远程插件后可查看用量。'**
+  String get featuresCodexUsageHostUpdate;
+
+  /// No description provided for @featuresCodexUsageWindow.
+  ///
+  /// In zh, this message translates to:
+  /// **'额度时段'**
+  String get featuresCodexUsageWindow;
+
+  /// No description provided for @featuresCodexUsageMinutes.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 分钟'**
+  String featuresCodexUsageMinutes(String count);
+
+  /// No description provided for @featuresCodexUsageHours.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 小时'**
+  String featuresCodexUsageHours(String count);
+
+  /// No description provided for @featuresCodexUsageDays.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 天'**
+  String featuresCodexUsageDays(String count);
+
+  /// No description provided for @featuresCodexUsageRemaining.
+  ///
+  /// In zh, this message translates to:
+  /// **'剩余 {percent}%'**
+  String featuresCodexUsageRemaining(String percent);
+
+  /// No description provided for @featuresCodexUsageReset.
+  ///
+  /// In zh, this message translates to:
+  /// **'{time} 重置'**
+  String featuresCodexUsageReset(String time);
+
   /// No description provided for @fileImageName.
   ///
   /// In zh, this message translates to:

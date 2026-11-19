@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../l10n/l10n.dart';
 import '../../../state/android_features.dart';
 import '../../../state/appearance_state.dart';
+import '../../../state/backend_state.dart';
 import '../../../state/settings_state.dart';
 import '../../../ui_config/ui_config.dart';
 import '../../common/expand_reveal.dart';
@@ -67,13 +68,20 @@ class AppearanceEntryTile extends ConsumerWidget {
 ///
 /// 选什么都即时生效:整个 App 的主题随之交叉淡变(`AppMotion.standard`),
 /// 这一页本身就是预览。
-class AppearancePage extends ConsumerWidget {
+class AppearancePage extends ConsumerStatefulWidget {
   const AppearancePage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AppearancePage> createState() => _AppearancePageState();
+}
+
+class _AppearancePageState extends ConsumerState<AppearancePage> {
+  late ChatBackend _editing = ref.read(backendProvider);
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final appearance = ref.watch(appearanceProvider);
+    final appearance = ref.watch(appearanceFor(_editing));
     final wallpaper = ref.watch(wallpaperAccentProvider).value;
     // A picture as a launcher shortcut: Android and HarmonyOS, not iOS.
     final pictureShortcut = ref.watch(operatingSystemProvider) != 'ios';
@@ -87,9 +95,30 @@ class AppearancePage extends ConsumerWidget {
         SettingsSection(
           title: l10n.pluginsColors,
           children: [
-            SpotAnchor(spot: Spots.accent, child: const PalettePicker()),
-            ExpandReveal(open: appearance.source == AccentSource.custom, child: const CustomAccentPanel()),
-            if (wallpaper != null) _WallpaperRow(wallpaper: wallpaper, on: appearance.source == AccentSource.wallpaper),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Wrap(
+                spacing: 8,
+                children: [
+                  for (final backend in ChatBackend.values)
+                    ChoiceChip(
+                      label: Text(backend.label),
+                      selected: _editing == backend,
+                      onSelected: (_) => setState(() => _editing = backend),
+                    ),
+                ],
+              ),
+            ),
+            SpotAnchor(
+              spot: Spots.accent,
+              child: PalettePicker(backend: _editing),
+            ),
+            ExpandReveal(
+              open: appearance.source == AccentSource.custom,
+              child: CustomAccentPanel(backend: _editing),
+            ),
+            if (wallpaper != null)
+              _WallpaperRow(backend: _editing, wallpaper: wallpaper, on: appearance.source == AccentSource.wallpaper),
           ],
         ),
         SettingsSection(
@@ -438,10 +467,11 @@ class _PhonePainter extends CustomPainter {
 /// 主色;选中的外面一圈同色环,下面是名字。[custom] 为 false 时只有六套
 /// 预设(首次启动的外观页)。
 class PalettePicker extends ConsumerWidget {
-  const PalettePicker({super.key, this.custom = true});
+  const PalettePicker({super.key, this.custom = true, this.backend = ChatBackend.deepseek});
 
   /// The seventh slot, a hue wheel for a colour of one's own.
   final bool custom;
+  final ChatBackend backend;
 
   /// How tall the row is at this text size. It lays out with a
   /// [LayoutBuilder], which a column measuring intrinsic heights (the
@@ -461,8 +491,9 @@ class PalettePicker extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
-    final appearance = ref.watch(appearanceProvider);
-    final notifier = ref.read(appearanceProvider.notifier);
+    final palette = appearanceFor(backend);
+    final appearance = ref.watch(palette);
+    final notifier = ref.read(palette.notifier);
     final brightness = Theme.of(context).brightness;
     final customAccent = AppAccent.derive(Color(appearance.customColor));
     bool chosen(AppAccent p) => appearance.source == AccentSource.preset && appearance.presetId == p.id;
@@ -664,7 +695,9 @@ class AccentDot extends StatelessWidget {
 /// 自定义:色相条 + 几个推荐色。色相条和色块画的都是守卫后的颜色 —— 看到
 /// 的就是用上的。
 class CustomAccentPanel extends ConsumerWidget {
-  const CustomAccentPanel({super.key});
+  const CustomAccentPanel({super.key, this.backend = ChatBackend.deepseek});
+
+  final ChatBackend backend;
 
   /// Picks beyond the presets: (hue, chroma, name), at the presets' lightness.
   static List<(double, double, String)> get suggestions => _suggestions(appL10n);
@@ -682,8 +715,9 @@ class CustomAccentPanel extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
     final choices = _suggestions(l10n);
-    final appearance = ref.watch(appearanceProvider);
-    final notifier = ref.read(appearanceProvider.notifier);
+    final palette = appearanceFor(backend);
+    final appearance = ref.watch(palette);
+    final notifier = ref.read(palette.notifier);
     final brightness = Theme.of(context).brightness;
     final pick = Color(appearance.customColor);
     return Padding(
@@ -910,15 +944,16 @@ class _HuePainter extends CustomPainter {
 // ── 跟随壁纸 ─────────────────────────────────────────────────────────────
 
 class _WallpaperRow extends ConsumerWidget {
-  const _WallpaperRow({required this.wallpaper, required this.on});
+  const _WallpaperRow({required this.backend, required this.wallpaper, required this.on});
 
+  final ChatBackend backend;
   final Color wallpaper;
   final bool on;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
-    final notifier = ref.read(appearanceProvider.notifier);
+    final notifier = ref.read(appearanceFor(backend).notifier);
     final seed = AppAccent.derive(
       wallpaper,
       id: AppAccent.wallpaperId,

@@ -10,11 +10,14 @@ import '../../../state/new_chat_modes.dart';
 import '../../../state/sessions_state.dart';
 import '../../common/app_sheet.dart';
 import '../../common/list_page_row.dart';
-import '../../common/risk_notice.dart';
 import '../../common/sheet_title_bar.dart';
-import '../../features/feature_format.dart';
 import '../../theme/app_icons.dart';
-import '../../theme/theme.dart';
+
+String codexApprovalLabel(BuildContext context, String? value) => switch (value) {
+  'user' => context.l10n.featuresCodexAskApproval,
+  'auto_review' => context.l10n.featuresCodexReviewForMe,
+  _ => context.l10n.featuresCodexApprovalTitle,
+};
 
 Future<void> showCodexPermissionSheet(BuildContext context, String? sessionId) {
   return showAppSheet<void>(
@@ -51,14 +54,6 @@ class _CodexPermissionSheetState extends ConsumerState<_CodexPermissionSheet> {
     if (_busy || !_ownsSheet) return;
     setState(() => _busy = true);
     try {
-      if (value == 'danger-full-access') {
-        final notice = RiskNotices.fullAccess;
-        final confirmed = await confirmRisk(
-          context,
-          RiskNotice(id: notice.id, level: notice.level, title: notice.title, body: notice.body, action: notice.action),
-        );
-        if (!confirmed || !_ownsSheet) return;
-      }
       final sessionId = widget.sessionId;
       if (sessionId == null) {
         final connection = ref.read(activeConnectionProvider).asData?.value;
@@ -66,7 +61,7 @@ class _CodexPermissionSheetState extends ConsumerState<_CodexPermissionSheet> {
         ref.read(pendingCodexNewChatModesProvider.notifier).selectPermission(value);
         return;
       }
-      final ok = await ref.read(chatProvider(sessionId).notifier).setCodexPermission(value);
+      final ok = await ref.read(chatProvider(sessionId).notifier).setCodexApprovalsReviewer(value);
       if (!ok && mounted && _ownsSheet) {
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(context.l10n.featuresSwitchFailed)));
       }
@@ -79,18 +74,15 @@ class _CodexPermissionSheetState extends ConsumerState<_CodexPermissionSheet> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final colors = Theme.of(context).colorScheme;
-    final dsh = DshColors.of(context);
     final sessionId = widget.sessionId;
     final connection = ref.watch(activeConnectionProvider).asData?.value;
     final chat = sessionId == null
         ? null
         : ref.watch(
             chatProvider(sessionId)
-                .select((state) => (permission: state.codexPermission, editable: state.codexPermissionEditable)),
+                .select((state) => (permission: state.codexApprovalsReviewer, editable: state.codexPermissionEditable)),
           );
-    final current = sessionId == null
-        ? ref.watch(pendingCodexNewChatModesProvider).permission ?? codexDefaultPermissionPreset
-        : chat?.permission;
+    final current = sessionId == null ? ref.watch(pendingCodexNewChatModesProvider).permission : chat?.permission;
     ref.watch(currentSessionProvider);
     ref.watch(modelSelectionScopeProvider);
     ref.listen(backendProvider, (_, backend) {
@@ -104,21 +96,19 @@ class _CodexPermissionSheetState extends ConsumerState<_CodexPermissionSheet> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            SheetTitleBar(l10n.nearbyPermissionTitle),
+            SheetTitleBar(l10n.featuresCodexApprovalTitle),
             SheetGroup(
               children: [
-                for (final value in codexPermissionPresets)
+                for (final value in codexApprovalReviewers)
                   Semantics(
                     selected: value == current,
                     inMutuallyExclusiveGroup: true,
                     child: ListPageRow(
-                      title: permissionName(value),
-                      subtitle: permissionHint(value),
+                      title: codexApprovalLabel(context, value),
+                      subtitle: value == 'user' ? l10n.featuresCodexAskApprovalHint : l10n.featuresCodexReviewForMeHint,
                       onTap: editable && value != current ? () => _pick(value) : null,
                       trailing: value == current
                           ? Icon(AppIcons.selected, size: 22, color: colors.primary)
-                          : value == 'danger-full-access'
-                          ? Icon(AppIcons.permissionRisky, size: 18, color: dsh.warning)
                           : const SizedBox.square(dimension: 22),
                     ),
                   ),

@@ -8386,6 +8386,58 @@ class L10nZh extends L10n {
   String get featuresPermissionResetDefault => '恢复默认';
 
   @override
+  String get featuresCodexApprovalTitle => '审批方式';
+
+  @override
+  String get featuresCodexAskApproval => '请求批准';
+
+  @override
+  String get featuresCodexReviewForMe => '帮我批准';
+
+  @override
+  String get featuresCodexAskApprovalHint => '操作需要审批时，由你决定是否允许。';
+
+  @override
+  String get featuresCodexReviewForMeHint => '由 Codex 审核审批请求，按风险决定是否允许。';
+
+  @override
+  String get featuresCodexUsage => 'Codex 用量';
+
+  @override
+  String get featuresCodexUsageUnavailable => '当前连接的 Codex 账号没有返回用量额度。';
+
+  @override
+  String get featuresCodexUsageHostUpdate => '更新电脑上的 AI窝 远程插件后可查看用量。';
+
+  @override
+  String get featuresCodexUsageWindow => '额度时段';
+
+  @override
+  String featuresCodexUsageMinutes(String count) {
+    return '$count 分钟';
+  }
+
+  @override
+  String featuresCodexUsageHours(String count) {
+    return '$count 小时';
+  }
+
+  @override
+  String featuresCodexUsageDays(String count) {
+    return '$count 天';
+  }
+
+  @override
+  String featuresCodexUsageRemaining(String percent) {
+    return '剩余 $percent%';
+  }
+
+  @override
+  String featuresCodexUsageReset(String time) {
+    return '$time 重置';
+  }
+
+  @override
   String get fileImageName => '图片';
 
   @override

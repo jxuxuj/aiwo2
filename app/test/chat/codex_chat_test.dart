@@ -95,6 +95,8 @@ class _CodexHost extends DshCarrier implements WorkspaceUploadCarrier {
           'sandbox': full ? 'danger-full-access' : 'workspace-write',
           'approvalPolicy': full ? 'never' : 'on-request',
         };
+      case 'dsh/approvals/watch':
+        return {'watching': true};
       case 'thread/unsubscribe':
         releases.add(args);
         releaseStarted?.complete();

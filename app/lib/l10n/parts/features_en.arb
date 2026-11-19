@@ -374,5 +374,19 @@
   "featuresPresetUpdateRequest": "Update agent preset “{name}” ({id}): Write these two files verbatim in the workspace. Use plugin_manager to remove bundle `{replacing}`, then use install_bundle to install the `{directory}` directory. Do only this.\n\n",
   "featuresZoneThisPhone": "{city} · This phone",
   "featuresPermissionResetHint": "The new-chat default is no longer valid",
-  "featuresPermissionResetDefault": "Restore default"
+  "featuresPermissionResetDefault": "Restore default",
+  "featuresCodexApprovalTitle": "Approval mode",
+  "featuresCodexAskApproval": "Ask for approval",
+  "featuresCodexReviewForMe": "Approve for me",
+  "featuresCodexAskApprovalHint": "You decide when Codex asks to run an action that needs approval.",
+  "featuresCodexReviewForMeHint": "Codex reviews approval requests and decides based on risk.",
+  "featuresCodexUsage": "Codex usage",
+  "featuresCodexUsageUnavailable": "The connected Codex account returned no usage limits.",
+  "featuresCodexUsageHostUpdate": "Update the computer’s AIwo Remote plugin to view usage.",
+  "featuresCodexUsageWindow": "Usage window",
+  "featuresCodexUsageMinutes": "{count} min",
+  "featuresCodexUsageHours": "{count} hr",
+  "featuresCodexUsageDays": "{count} days",
+  "featuresCodexUsageRemaining": "{percent}% remaining",
+  "featuresCodexUsageReset": "Resets {time}"
 }

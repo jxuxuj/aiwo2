@@ -17,6 +17,12 @@ const _promptEnvelopeReserve = 16 * 1024;
 // Only levels accepted by the Remote Host's turn/start method can be selected.
 const _remoteReasoningEfforts = {'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'};
 
+String? codexApprovalReviewer(Object? value) => switch (value) {
+  'user' => 'user',
+  'auto_review' || 'guardian_subagent' => 'auto_review',
+  _ => null,
+};
+
 int _base64Size(int bytes) => ((bytes + 2) ~/ 3) * 4;
 
 Future<List<_PromptImage>> _fitInlineImages(List<_PromptImage> images, String text) async {
@@ -202,12 +208,19 @@ class CodexModel {
 
 /// The effective settings returned by `thread/start` or `thread/resume`.
 class CodexThreadSettings {
-  const CodexThreadSettings({required this.threadId, this.model, this.reasoningEffort, this.permissionPreset});
+  const CodexThreadSettings({
+    required this.threadId,
+    this.model,
+    this.reasoningEffort,
+    this.permissionPreset,
+    this.approvalsReviewer,
+  });
 
   final String threadId;
   final String? model;
   final String? reasoningEffort;
   final String? permissionPreset;
+  final String? approvalsReviewer;
 
   static CodexThreadSettings? _parse(Object? result, {String? expectedThreadId}) {
     if (result is! Map) return null;
@@ -225,6 +238,7 @@ class CodexThreadSettings {
       model: _nonEmptyString(result['model']) ?? _nonEmptyString(settings['model']),
       reasoningEffort: _nonEmptyString(result['reasoningEffort']) ?? _nonEmptyString(settings['effort']),
       permissionPreset: _confirmedPermissionPreset(result) ?? _confirmedPermissionPreset(settings),
+      approvalsReviewer: codexApprovalReviewer(result['approvalsReviewer'] ?? settings['approvalsReviewer']),
     );
   }
 
@@ -250,6 +264,36 @@ class CodexClient {
   CodexClient(this.carrier);
 
   final DshCarrier carrier;
+
+  Future<CodexUsage> readUsage() async => CodexUsage.parse(await _call('account/rateLimits/read', const {}));
+
+  Future<void> watchApprovals(String threadId) async {
+    try {
+      await _call('dsh/approvals/watch', {'threadId': threadId});
+    } on DshRemoteException catch (error) {
+      if (error.code != 'METHOD_NOT_ALLOWED') rethrow;
+    }
+  }
+
+  Future<void> respondApproval(String requestHandle, ApprovalDecision decision) async {
+    final value = switch (decision) {
+      ApprovalDecision.allowOnce => 'accept',
+      ApprovalDecision.reject => 'decline',
+      ApprovalDecision.pass => 'cancel',
+    };
+    try {
+      await carrier.rawCall('codex.app.respond', {'requestHandle': requestHandle, 'decision': value});
+    } on RemoteRpcException catch (error) {
+      throw DshRemoteException(error.code, 'Codex Remote could not respond to the approval.');
+    }
+  }
+
+  Future<CodexThreadSettings> setApprovalsReviewer(String threadId, String reviewer) async {
+    final result = await _call('dsh/approvalReviewer/set', {'threadId': threadId, 'approvalsReviewer': reviewer});
+    final settings = CodexThreadSettings._parse(result, expectedThreadId: threadId);
+    if (settings == null) throw const DshProtocolException('dsh/approvalReviewer/set: invalid settings response');
+    return settings;
+  }
 
   Future<Object?> _call(String method, Map<String, Object?> params, {bool allowLargeResponse = false}) async {
     final envelope = <String, Object?>{'method': method, 'params': params};
@@ -346,14 +390,20 @@ class CodexClient {
   }
 
   /// One page of a thread's history, oldest first. [beforeSeq] is exclusive.
-  Future<CodexHistory> readHistory(String threadId, {int maxMessages = 60, int? beforeSeq, int? throughSeq}) async {
+  Future<CodexHistory> readHistory(
+    String threadId, {
+    int maxMessages = 60,
+    int? beforeSeq,
+    int? throughSeq,
+    String? sessionId,
+  }) async {
     final result = await _call('dsh/sessionHistory', {
       'threadId': threadId,
       'maxMessages': maxMessages,
       'beforeSeq': ?beforeSeq,
       'throughSeq': ?throughSeq,
     }, allowLargeResponse: true);
-    return CodexHistory.parse(result);
+    return CodexHistory.parse(result, sessionId: sessionId);
   }
 
   /// Starts a turn with text and inline images, or steers [expectedTurnId].
@@ -394,8 +444,18 @@ class CodexClient {
   }
 
   /// Starts a new thread in [cwd], returning the settings the Host applied.
-  Future<CodexThreadSettings?> startThread(String cwd, {String? model, String? permissionPreset}) async {
-    final result = await _call('thread/start', {'cwd': cwd, 'model': ?model, 'permissionPreset': ?permissionPreset});
+  Future<CodexThreadSettings?> startThread(
+    String cwd, {
+    String? model,
+    String? permissionPreset,
+    String? approvalsReviewer,
+  }) async {
+    final result = await _call('thread/start', {
+      'cwd': cwd,
+      'model': ?model,
+      'permissionPreset': ?permissionPreset,
+      'approvalsReviewer': ?approvalsReviewer,
+    });
     return CodexThreadSettings._parse(result);
   }
 
@@ -451,6 +511,78 @@ class CodexClient {
     }
     return null;
   }
+}
+
+class CodexUsage {
+  const CodexUsage(this.plan, this.windows);
+
+  final String? plan;
+  final List<CodexUsageWindow> windows;
+
+  factory CodexUsage.parse(Object? value) {
+    if (value is! Map) throw const DshProtocolException('account/rateLimits/read: invalid response');
+    final buckets = <String, Object?>{};
+    final reported = value['rateLimitsByLimitId'];
+    if (reported is Map) {
+      for (final entry in reported.entries) {
+        if (entry.key is String && entry.value is Map) buckets[entry.key as String] = entry.value;
+      }
+    }
+    final fallback = value['rateLimits'];
+    if (fallback is Map) buckets.putIfAbsent('codex', () => fallback);
+    final ids = buckets.keys.toList()
+      ..sort(
+        (a, b) => a == b
+            ? 0
+            : a == 'codex'
+            ? -1
+            : b == 'codex'
+            ? 1
+            : a.compareTo(b),
+      );
+    final windows = <CodexUsageWindow>[];
+    String? plan;
+    for (final id in ids) {
+      final bucket = buckets[id] as Map;
+      plan ??= _nonEmptyString(bucket['planType']);
+      final name = _nonEmptyString(bucket['limitName']) ?? (id == 'codex' ? 'Codex' : id);
+      for (final key in ['primary', 'secondary']) {
+        final window = bucket[key];
+        if (window is! Map || window['usedPercent'] is! num) continue;
+        final percent = (window['usedPercent'] as num).toDouble();
+        if (!percent.isFinite || percent < 0 || percent > 100) continue;
+        final reset = _integer(window['resetsAt']);
+        windows.add(
+          CodexUsageWindow(
+            bucketId: id,
+            name: name,
+            usedPercent: percent,
+            durationMinutes: _integer(window['windowDurationMins']),
+            resetsAt: reset != null && reset > 0 && reset <= 8640000000000
+                ? DateTime.fromMillisecondsSinceEpoch(reset * 1000, isUtc: true).toLocal()
+                : null,
+          ),
+        );
+      }
+    }
+    return CodexUsage(plan, List.unmodifiable(windows));
+  }
+}
+
+class CodexUsageWindow {
+  const CodexUsageWindow({
+    required this.bucketId,
+    required this.name,
+    required this.usedPercent,
+    this.durationMinutes,
+    this.resetsAt,
+  });
+
+  final String bucketId;
+  final String name;
+  final double usedPercent;
+  final int? durationMinutes;
+  final DateTime? resetsAt;
 }
 
 /// One user or assistant message projected from the durable history.
@@ -515,6 +647,8 @@ class CodexHistory {
     this.model,
     this.reasoningEffort,
     this.permissionPreset,
+    this.approvalsReviewer,
+    this.approvals = const [],
   });
 
   final List<CodexMessage> messages;
@@ -529,11 +663,13 @@ class CodexHistory {
   final String? model;
   final String? reasoningEffort;
   final String? permissionPreset;
+  final String? approvalsReviewer;
+  final List<ApprovalRequest> approvals;
 
   /// Pass this as `beforeSeq` to load the preceding page.
   int? get oldestSeq => records.firstOrNull?.seq;
 
-  static CodexHistory parse(Object? result) {
+  static CodexHistory parse(Object? result, {String? sessionId}) {
     if (result is! Map) return const CodexHistory(messages: <CodexMessage>[], hasMore: false);
     final rawRecords = result['records'];
     final records = <SessionLogEvent>[];
@@ -547,6 +683,7 @@ class CodexHistory {
     }
     final header = result['header'];
     final preset = result['permissionPreset'];
+    final rawApprovals = result['approvals'];
     return CodexHistory(
       messages: records.map(CodexMessage._fromEvent).nonNulls.toList(growable: false),
       records: records,
@@ -557,6 +694,20 @@ class CodexHistory {
       activeTurnId: _nonEmptyString(result['activeTurnId']),
       model: header is Map ? _nonEmptyString(header['model']) : null,
       reasoningEffort: header is Map ? _nonEmptyString(header['reasoningEffort']) : null,
+      approvalsReviewer: codexApprovalReviewer(result['approvalsReviewer']),
+      approvals: sessionId == null || rawApprovals is! List
+          ? const []
+          : [
+              for (final raw in rawApprovals.whereType<Map>())
+                if (_nonEmptyString(raw['requestHandle']) case final id?)
+                  ApprovalRequest(
+                    eventId: id,
+                    sessionId: sessionId,
+                    toolName: raw['method'] == 'item/fileChange/requestApproval' ? 'edit' : 'bash',
+                    reason: _nonEmptyString(raw['reason']),
+                    raw: {'codexApproval': true, 'command': raw['command']},
+                  ),
+            ],
       permissionPreset: switch (preset) {
         'workspace-write' => 'workspace-write',
         'danger-full-access' => 'danger-full-access',

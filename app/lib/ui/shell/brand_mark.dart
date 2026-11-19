@@ -129,6 +129,7 @@ class BrandLockup extends StatelessWidget {
     this.label = AppInfo.wordmark,
     this.color,
     this.glyphColor,
+    this.icon,
   });
 
   /// The lockup's size; the word is set at 0.95 × this unless [fontSize] is given.
@@ -144,6 +145,7 @@ class BrandLockup extends StatelessWidget {
 
   /// A flat glyph tint instead of the colour glyph.
   final Color? glyphColor;
+  final IconData? icon;
 
   /// Glyph height / word size.
   static const glyphScale = 1.25;
@@ -182,7 +184,15 @@ class BrandLockup extends StatelessWidget {
           // A baseline this far below the glyph's top puts its visual centre on the
           // word's x-height (or cap-height) centre when the row aligns baselines.
           baseline: glyph * BrandMark.visualCentre.dy + centreRise(label, drawn),
-          child: BrandMark(size: glyph, color: glyphColor),
+          child: icon == null
+              ? BrandMark(size: glyph, color: glyphColor)
+              : DecoratedBox(
+                  decoration: BoxDecoration(color: scheme.primary, borderRadius: BorderRadius.circular(glyph * .27)),
+                  child: SizedBox.square(
+                    dimension: glyph,
+                    child: Icon(icon, size: glyph * .72, color: scheme.onPrimary),
+                  ),
+                ),
         ),
         SizedBox(width: drawn * gapScale),
         Text(

@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/l10n.dart';
 import '../ui/theme/accent.dart';
+import 'backend_state.dart';
 
 /// 配色从哪来。
 enum AccentSource {
@@ -53,9 +54,14 @@ class AppearanceSettings {
 }
 
 class AppearanceController extends Notifier<AppearanceSettings> {
-  static const _sourceKey = 'appearance.accent_source';
-  static const _presetKey = 'appearance.preset';
-  static const _customKey = 'appearance.custom_color';
+  AppearanceController({this.backend = ChatBackend.deepseek});
+
+  final ChatBackend backend;
+  String get _namespace => backend == ChatBackend.codex ? 'appearance.codex' : 'appearance';
+  String get _sourceKey => '$_namespace.accent_source';
+  String get _presetKey => '$_namespace.preset';
+  String get _customKey => '$_namespace.custom_color';
+  String get _defaultPreset => backend == ChatBackend.codex ? 'mist' : 'graphite';
 
   /// 当前配色的浅色主色(ARGB),给原生通知的强调色读
   /// (`DynamicColorPlugin.kt` 的 `ThemeAccent`)。
@@ -66,7 +72,7 @@ class AppearanceController extends Notifier<AppearanceSettings> {
   @override
   AppearanceSettings build() {
     _loaded = _load();
-    return const AppearanceSettings();
+    return AppearanceSettings(presetId: _defaultPreset);
   }
 
   Future<void> _load() async {
@@ -75,7 +81,7 @@ class AppearanceController extends Notifier<AppearanceSettings> {
       final source = AccentSource.values.asNameMap()[prefs.getString(_sourceKey)] ?? AccentSource.preset;
       state = AppearanceSettings(
         source: source,
-        presetId: AppAccent.preset(prefs.getString(_presetKey)).id,
+        presetId: AppAccent.preset(prefs.getString(_presetKey) ?? _defaultPreset).id,
         customColor: prefs.getInt(_customKey) ?? AppearanceSettings.defaultCustom,
         loaded: true,
       );
@@ -118,6 +124,16 @@ class AppearanceController extends Notifier<AppearanceSettings> {
 }
 
 final appearanceProvider = NotifierProvider<AppearanceController, AppearanceSettings>(AppearanceController.new);
+final codexAppearanceProvider = NotifierProvider<AppearanceController, AppearanceSettings>(
+  () => AppearanceController(backend: ChatBackend.codex),
+);
+
+NotifierProvider<AppearanceController, AppearanceSettings> appearanceFor(ChatBackend backend) =>
+    backend == ChatBackend.codex ? codexAppearanceProvider : appearanceProvider;
+
+final activeAppearanceProvider = Provider<AppearanceSettings>(
+  (ref) => ref.watch(appearanceFor(ref.watch(backendProvider))),
+);
 
 /// 系统的壁纸取色(Android 12+ 的 `system_accent1_*`)。低版本、取不到时为
 /// null,外观页据此整行不显示「跟随壁纸」。
@@ -151,7 +167,7 @@ final wallpaperAccentProvider = FutureProvider<Color?>((ref) {
 
 /// 当前生效的配色。壁纸色还没读到(或读不到)时先用上一次的预设。
 final accentProvider = Provider<AppAccent>((ref) {
-  final s = ref.watch(appearanceProvider);
+  final s = ref.watch(activeAppearanceProvider);
   final preset = AppAccent.preset(s.presetId);
   final accent = switch (s.source) {
     AccentSource.preset => preset,

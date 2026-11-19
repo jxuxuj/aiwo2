@@ -61,6 +61,7 @@ final pendingNewChatModesProvider = NotifierProvider<PendingNewChatModes, NewCha
 
 const codexDefaultPermissionPreset = 'workspace-write';
 const codexPermissionPresets = [codexDefaultPermissionPreset, 'danger-full-access'];
+const codexApprovalReviewers = ['user', 'auto_review'];
 
 final pendingCodexNewChatModesProvider = NotifierProvider<PendingNewChatModes, NewChatModes>(PendingNewChatModes.new);
 

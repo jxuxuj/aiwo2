@@ -171,10 +171,18 @@ class SessionsDrawer extends ConsumerWidget {
                     children: [
                       // On a narrow drawer with large text the lockup gives
                       // way a little rather than the keys.
-                      const Expanded(
+                      Expanded(
                         child: Align(
                           alignment: AlignmentDirectional.centerStart,
-                          child: FittedBox(fit: BoxFit.scaleDown, child: BrandLockup(height: 19)),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: BrandLockup(
+                              height: 19,
+                              label: backend.label,
+                              icon: codex ? Icons.terminal_rounded : null,
+                              glyphColor: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
                         ),
                       ),
                       // Keep both switches quiet, with 新对话 as the solid key.

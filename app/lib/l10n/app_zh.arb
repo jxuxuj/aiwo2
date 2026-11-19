@@ -5159,6 +5159,55 @@
   },
   "featuresPermissionResetHint": "新对话的默认权限已失效",
   "featuresPermissionResetDefault": "恢复默认",
+  "featuresCodexApprovalTitle": "审批方式",
+  "featuresCodexAskApproval": "请求批准",
+  "featuresCodexReviewForMe": "帮我批准",
+  "featuresCodexAskApprovalHint": "操作需要审批时，由你决定是否允许。",
+  "featuresCodexReviewForMeHint": "由 Codex 审核审批请求，按风险决定是否允许。",
+  "featuresCodexUsage": "Codex 用量",
+  "featuresCodexUsageUnavailable": "当前连接的 Codex 账号没有返回用量额度。",
+  "featuresCodexUsageHostUpdate": "更新电脑上的 AI窝 远程插件后可查看用量。",
+  "featuresCodexUsageWindow": "额度时段",
+  "featuresCodexUsageMinutes": "{count} 分钟",
+  "@featuresCodexUsageMinutes": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "featuresCodexUsageHours": "{count} 小时",
+  "@featuresCodexUsageHours": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "featuresCodexUsageDays": "{count} 天",
+  "@featuresCodexUsageDays": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "featuresCodexUsageRemaining": "剩余 {percent}%",
+  "@featuresCodexUsageRemaining": {
+    "placeholders": {
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "featuresCodexUsageReset": "{time} 重置",
+  "@featuresCodexUsageReset": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
   "fileImageName": "图片",
   "fileSharedText": "分享的文字.txt",
   "fileChatFallback": "对话",

@@ -53,6 +53,49 @@ Map<String, Object?> _event(int seq, String type, Map<String, Object?> data) => 
 };
 
 void main() {
+  test('decodes the Codex Plus short and weekly usage windows', () async {
+    final carrier = _Carrier((method, params, _) {
+      expect(method, 'account/rateLimits/read');
+      expect(params, isEmpty);
+      return {
+        'rateLimitsByLimitId': {
+          'codex': {
+            'planType': 'plus',
+            'primary': {'usedPercent': 72, 'windowDurationMins': 300, 'resetsAt': 1795068129},
+            'secondary': {'usedPercent': 43, 'windowDurationMins': 10080},
+          },
+        },
+      };
+    });
+    final usage = await CodexClient(carrier).readUsage();
+    expect(usage.plan, 'plus');
+    expect(usage.windows.map((window) => window.durationMinutes), [300, 10080]);
+    expect(usage.windows.map((window) => window.usedPercent), [72, 43]);
+    expect(usage.windows.first.resetsAt?.millisecondsSinceEpoch, 1795068129000);
+  });
+
+  test('uses the server-confirmed reviewer and parses a pending phone approval', () async {
+    final carrier = _Carrier((method, params, _) {
+      expect(params['threadId'], 'thread-1');
+      if (method == 'dsh/approvalReviewer/set') {
+        expect(params['approvalsReviewer'], 'auto_review');
+        return {
+          'thread': {'id': 'thread-1'},
+          'approvalsReviewer': 'guardian_subagent',
+        };
+      }
+      return {
+        'approvals': [
+          {'requestHandle': 'handle', 'method': 'item/commandExecution/requestApproval', 'command': 'echo ok'},
+        ],
+      };
+    });
+    final client = CodexClient(carrier);
+    expect((await client.setApprovalsReviewer('thread-1', 'auto_review')).approvalsReviewer, 'auto_review');
+    final history = await client.readHistory('thread-1', sessionId: 'codex:thread-1');
+    expect(history.approvals.single.eventId, 'handle');
+    expect(history.approvals.single.raw['command'], 'echo ok');
+  });
   test('starts a turn inline with the selected model, text and image data', () async {
     final carrier = _Carrier(
       (_, _, _) => {

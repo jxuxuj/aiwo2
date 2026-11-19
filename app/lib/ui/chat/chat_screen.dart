@@ -71,7 +71,6 @@ import '../common/sheet_title_bar.dart';
 import '../common/smooth_size.dart';
 import '../common/status_dot.dart';
 import '../features/all_features_page.dart';
-import '../features/feature_format.dart' show permissionName;
 import '../features/session_export_page.dart';
 import '../onboarding/local_install.dart';
 import '../pets/pet_perch.dart';
@@ -117,6 +116,7 @@ import 'voice/voice_controller.dart';
 import 'widgets/activity_strip.dart';
 import 'widgets/attachments.dart';
 import 'widgets/codex_permission_sheet.dart';
+import 'widgets/codex_usage_sheet.dart';
 import 'widgets/notice_row.dart';
 import 'widgets/permission_pill.dart';
 import 'widgets/plus_panel.dart';
@@ -709,7 +709,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     });
     try {
       final settings = await CodexClient(client.carrier)
-          .startThread(cwd, model: model?.model, permissionPreset: permission);
+          .startThread(cwd, model: model?.model, approvalsReviewer: permission);
       if (!ownsCreation() ||
           _draftKey != newDraftKey ||
           ref.read(currentSessionProvider) != null ||
@@ -719,7 +719,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         return null;
       }
       if (settings == null) throw const DshProtocolException('thread/start: missing thread id');
-      if (permission != null && settings.permissionPreset != permission) {
+      if (permission != null && settings.approvalsReviewer != permission) {
         setState(() => _localError = appL10n.featuresSwitchFailed);
         return null;
       }
@@ -1824,6 +1824,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                 singleQuestion: s.singleQuestion != null,
                 model: s.model,
                 codexPermission: s.codexPermission,
+                codexApprovalsReviewer: s.codexApprovalsReviewer,
                 error: s.error,
                 syncError: s.syncError,
                 defaultModelSaveFailed: s.defaultModelSaveFailed,
@@ -1982,8 +1983,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
               ? _codexPermissionPill(
                   sessionId,
                   sessionId == null
-                      ? ref.watch(pendingCodexNewChatModesProvider).permission ?? codexDefaultPermissionPreset
-                      : chat?.codexPermission,
+                      ? ref.watch(pendingCodexNewChatModesProvider).permission
+                      : chat?.codexApprovalsReviewer,
                 )
               : null
         : _composerPills(
@@ -2466,7 +2467,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                               labels: frameLabels(generate, generateModel, _drafts.length),
                                             ),
                                     ),
-                                    accessory: sessionId == null || contextFraction == null
+                                    accessory: _codex && connected
+                                        ? const CodexUsageRing()
+                                        : sessionId == null || contextFraction == null
                                         ? null
                                         : ContextRing(
                                             fraction: contextFraction,
@@ -2492,9 +2495,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   Widget _codexPermissionPill(String? sessionId, String? preset) {
     void open() => unawaited(showCodexPermissionSheet(context, sessionId));
-    if (preset == 'danger-full-access') return PermissionPill(preset: 'danger-full-access', onTap: open);
     final l10n = context.l10n;
-    final label = preset == null ? l10n.featuresPermissions : permissionName(preset);
+    final label = codexApprovalLabel(context, preset);
     return QuietChip(
       label: label,
       icon: AppIcons.permissions,

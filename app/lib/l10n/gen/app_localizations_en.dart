@@ -8843,6 +8843,58 @@ class L10nEn extends L10n {
   String get featuresPermissionResetDefault => 'Restore default';
 
   @override
+  String get featuresCodexApprovalTitle => 'Approval mode';
+
+  @override
+  String get featuresCodexAskApproval => 'Ask for approval';
+
+  @override
+  String get featuresCodexReviewForMe => 'Approve for me';
+
+  @override
+  String get featuresCodexAskApprovalHint => 'You decide when Codex asks to run an action that needs approval.';
+
+  @override
+  String get featuresCodexReviewForMeHint => 'Codex reviews approval requests and decides based on risk.';
+
+  @override
+  String get featuresCodexUsage => 'Codex usage';
+
+  @override
+  String get featuresCodexUsageUnavailable => 'The connected Codex account returned no usage limits.';
+
+  @override
+  String get featuresCodexUsageHostUpdate => 'Update the computer’s AIwo Remote plugin to view usage.';
+
+  @override
+  String get featuresCodexUsageWindow => 'Usage window';
+
+  @override
+  String featuresCodexUsageMinutes(String count) {
+    return '$count min';
+  }
+
+  @override
+  String featuresCodexUsageHours(String count) {
+    return '$count hr';
+  }
+
+  @override
+  String featuresCodexUsageDays(String count) {
+    return '$count days';
+  }
+
+  @override
+  String featuresCodexUsageRemaining(String percent) {
+    return '$percent% remaining';
+  }
+
+  @override
+  String featuresCodexUsageReset(String time) {
+    return 'Resets $time';
+  }
+
+  @override
   String get fileImageName => 'image';
 
   @override

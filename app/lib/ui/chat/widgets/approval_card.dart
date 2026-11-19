@@ -99,7 +99,8 @@ class _ApprovalCardState extends State<ApprovalCard> {
     final colors = theme.colorScheme;
     final dsh = DshColors.of(context);
     final view = widget.view;
-    final code = view?.command ?? (view?.path == null ? null : view!.path);
+    final codexCommand = widget.request.raw['codexApproval'] == true ? widget.request.raw['command'] : null;
+    final code = view?.command ?? view?.path ?? (codexCommand is String ? codexCommand : null);
     final description = view?.arg('description')?.trim();
     final reason = _reason(l10n.localeName);
     const button = Size(0, 44);
@@ -121,7 +122,7 @@ class _ApprovalCardState extends State<ApprovalCard> {
                 ),
               if (code != null && code.trim().isNotEmpty) ...[
                 const SizedBox(height: 8),
-                _CommandWell(text: code.trim(), isCommand: view?.command != null),
+                _CommandWell(text: code.trim(), isCommand: view?.command != null || codexCommand is String),
               ],
               if (reason != null) ...[
                 const SizedBox(height: 8),

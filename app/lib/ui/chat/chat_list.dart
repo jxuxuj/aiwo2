@@ -1486,7 +1486,11 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
       ChangeCardRow(:final files) => ChangeCard(files: files),
       ArtifactCardRow(:final group) => ArtifactCard(sessionId: widget.sessionId, group: group),
       CommandNoticeRow(:final notice) => CommandRow(notice: notice),
-      ApprovalRow(:final request) => ApprovalCard(request: request, onRespond: _respond, onAllowAll: _allowAll),
+      ApprovalRow(:final request) => ApprovalCard(
+        request: request,
+        onRespond: _respond,
+        onAllowAll: request.raw['codexApproval'] == true ? null : _allowAll,
+      ),
       QuestionRow(:final request) => _InlineEditorReveal(
         onShow: _revealInlineEditor,
         child: QuestionCard(request: request, onAnswer: _answer, onReject: _rejectQuestion),

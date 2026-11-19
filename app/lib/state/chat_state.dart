@@ -15,7 +15,7 @@ import 'codex_state.dart';
 import 'connection_state.dart';
 import 'hosts_state.dart';
 import 'models_state.dart';
-import 'new_chat_modes.dart' show codexPermissionPresets;
+import 'new_chat_modes.dart' show codexApprovalReviewers, codexPermissionPresets;
 import 'notify_state.dart' show appForegroundProvider;
 import 'run_pulse.dart';
 import 'sessions_state.dart';
@@ -290,6 +290,7 @@ class ChatState {
     this.connection,
     this.model,
     this.codexPermission,
+    this.codexApprovalsReviewer,
     this.codexPermissionEditable = false,
     this.pending = const [],
     this.autoApprove = false,
@@ -342,6 +343,7 @@ class ChatState {
   final ModelSelection? model;
 
   final String? codexPermission;
+  final String? codexApprovalsReviewer;
   final bool codexPermissionEditable;
 
   /// Prompts sent from here and not yet echoed by the transcript.
@@ -406,6 +408,7 @@ class ChatState {
     bool clearNotice = false,
     ModelSelection? model,
     String? codexPermission,
+    String? codexApprovalsReviewer,
     bool? codexPermissionEditable,
     List<PendingPrompt>? pending,
     bool? autoApprove,
@@ -431,6 +434,7 @@ class ChatState {
     connection: connection,
     model: model ?? this.model,
     codexPermission: codexPermission ?? this.codexPermission,
+    codexApprovalsReviewer: codexApprovalsReviewer ?? this.codexApprovalsReviewer,
     codexPermissionEditable: codexPermissionEditable ?? this.codexPermissionEditable,
     pending: pending ?? this.pending,
     autoApprove: autoApprove ?? this.autoApprove,
@@ -1906,6 +1910,7 @@ class ChatController extends Notifier<ChatState> with _CodexChat {
   }
 
   Future<void> respond(ApprovalRequest request, ApprovalDecision decision) async {
+    if (_isCodex) return _respondCodexApproval(request, decision);
     final scope = _approvalScope;
     try {
       await _client?.respondApproval(request, decision);
@@ -1954,6 +1959,9 @@ class ChatController extends Notifier<ChatState> with _CodexChat {
   }
 
   Future<bool> setCodexPermission(String preset) async => _isCodex && await _setCodexPermission(preset);
+
+  Future<bool> setCodexApprovalsReviewer(String reviewer) async =>
+      _isCodex && await _changeCodexPermission(reviewer, reviewer: true);
 
   /// Gives up this client's idle subscription when the user moves to desktop.
   Future<bool> releaseCodexForDesktop() async => _isCodex && await _releaseCodexForDesktop();

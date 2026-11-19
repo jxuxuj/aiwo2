@@ -161,7 +161,7 @@ class _DshAppState extends ConsumerState<DshApp> with WidgetsBindingObserver {
     // 刷新率设置改动时告诉原生;setMode 对同一个值不做任何事。
     unawaited(RefreshRateService.instance.setMode(ref.watch(performancePrefsProvider.select((p) => p.refreshRate))));
     final themeMode = ref.watch(uiThemeModeProvider.select((s) => s.value));
-    final appearance = ref.watch(appearanceProvider);
+    final appearance = ref.watch(activeAppearanceProvider);
     final waiting =
         !appearance.loaded ||
         (appearance.source == AccentSource.wallpaper && ref.watch(wallpaperAccentProvider).isLoading);
