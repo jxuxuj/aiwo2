@@ -15,6 +15,7 @@ import '../workshop/workshop_http.dart';
 import '../workshop/workshop_models.dart';
 import '../workshop/workshop_repository.dart';
 import 'app_info.dart';
+import 'backend_state.dart';
 
 /// Our own deployment unless the build names another; an empty value builds
 /// without a Workshop. Never an implicit third-party host.
@@ -147,8 +148,11 @@ final workshopPackageChangedProvider = Provider<WorkshopPackageChanged>((ref) {
       if (removed) {
         await _waitPetPreferences(ref);
         if (!ref.mounted) return;
-        if (ref.read(petPrefsProvider).packId == item.localId) {
-          await ref.read(petPrefsProvider.notifier).replacePack(defaultPetId);
+        for (final backend in ChatBackend.values) {
+          if (ref.read(petPackIdProvider(backend)) == item.localId) {
+            await ref.read(petPrefsProvider.notifier).replacePack(defaultPetFor(backend), backend: backend);
+            if (!ref.mounted) return;
+          }
         }
       }
       if (ref.mounted) await ref.read(petOverlayChannelProvider).reloadPack(item.localId);

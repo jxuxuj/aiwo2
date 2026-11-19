@@ -18,6 +18,7 @@ import '../../l10n/l10n.dart';
 import '../../pets/pet_library.dart';
 import '../../pets/pet_pack.dart';
 import '../../pets/pet_prefs.dart';
+import '../../state/backend_state.dart';
 import '../../pets/pet_signals.dart';
 import '../../pets/pet_state.dart';
 import '../bots/bot_sheets.dart' show confirmDelete;
@@ -73,7 +74,13 @@ String petImportProblemText(L10n l10n, PetImportException error) => switch (erro
 ///  Deepy 小鲸鱼   鲸娘       不显示
 /// ```
 class PetPicker extends ConsumerStatefulWidget {
-  const PetPicker({super.key, this.padding = const EdgeInsets.all(16), this.onPicked, this.importable = false});
+  const PetPicker({
+    super.key,
+    this.padding = const EdgeInsets.all(16),
+    this.onPicked,
+    this.importable = false,
+    this.backend,
+  });
 
   final EdgeInsetsGeometry padding;
 
@@ -82,6 +89,7 @@ class PetPicker extends ConsumerStatefulWidget {
 
   /// Offers 导入 after the pets (宠物设置; the menu's quick swap doesn't).
   final bool importable;
+  final ChatBackend? backend;
 
   static const gap = 12.0;
   static const ring = 2.0;
@@ -103,7 +111,7 @@ class _PetPickerState extends ConsumerState<PetPicker> {
   bool _importing = false;
 
   void _pick(String id) {
-    unawaited(ref.read(petPrefsProvider.notifier).setPack(id));
+    unawaited(ref.read(petPrefsProvider.notifier).setPack(id, backend: widget.backend ?? ref.read(backendProvider)));
     widget.onPicked?.call(id);
   }
 
@@ -177,7 +185,7 @@ class _PetPickerState extends ConsumerState<PetPicker> {
 
   @override
   Widget build(BuildContext context) {
-    final selected = ref.watch(petPrefsProvider.select((p) => p.packId));
+    final selected = ref.watch(petPackIdProvider(widget.backend ?? ref.watch(backendProvider)));
     final brought = ref.watch(userPetsProvider).value ?? const <PetPack>[];
     final tiles = <Widget>[
       for (final id in builtInPets) _Option(id: id, selected: id == selected, onTap: () => _pick(id)),

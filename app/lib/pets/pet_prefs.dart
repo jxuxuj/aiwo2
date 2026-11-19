@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../performance/performance_state.dart';
+import '../state/backend_state.dart';
 import 'pet_library.dart';
 import 'pet_state.dart';
 
@@ -17,6 +18,9 @@ const builtInPets = ['deepy-whale', 'whale-girl'];
 
 /// The default pet.
 const defaultPetId = 'deepy-whale';
+const defaultCodexPetId = 'whale-girl';
+
+String defaultPetFor(ChatBackend backend) => backend == ChatBackend.codex ? defaultCodexPetId : defaultPetId;
 
 /// Explicit choice for the existing Android overlay. Pixel remains the default.
 enum PetOverlayRenderer {
@@ -43,14 +47,14 @@ enum PetOverlayFraming {
   final double y;
 
   /// The preset [prefs] holds; anything else (set some other way) reads as [full].
-  static PetOverlayFraming of(PetPrefs prefs) =>
-      prefs.floatZoom == half.zoom && prefs.floatY == half.y ? half : full;
+  static PetOverlayFraming of(PetPrefs prefs) => prefs.floatZoom == half.zoom && prefs.floatY == half.y ? half : full;
 }
 
 @immutable
 class PetPrefs {
   const PetPrefs({
     this.packId = defaultPetId,
+    this.codexPackId,
     this.packExplicit = true,
     this.size = PetSize.medium,
     this.customHeight = 30,
@@ -69,6 +73,9 @@ class PetPrefs {
 
   /// The chosen pet, or [noPetId] (「不显示」).
   final String packId;
+  final String? codexPackId;
+  String packIdFor(ChatBackend backend, {required bool petsEnabled}) =>
+      backend == ChatBackend.codex ? codexPackId ?? (petsEnabled ? defaultCodexPetId : noPetId) : packId;
   final bool packExplicit;
   final PetSize size;
 
@@ -98,6 +105,7 @@ class PetPrefs {
 
   PetPrefs copyWith({
     String? packId,
+    String? codexPackId,
     bool? packExplicit,
     PetSize? size,
     double? customHeight,
@@ -111,6 +119,7 @@ class PetPrefs {
     bool? loaded,
   }) => PetPrefs(
     packId: packId ?? this.packId,
+    codexPackId: codexPackId ?? this.codexPackId,
     packExplicit: packExplicit ?? this.packExplicit,
     size: size ?? this.size,
     customHeight: customHeight ?? this.customHeight,
@@ -127,6 +136,7 @@ class PetPrefs {
   bool operator ==(Object other) =>
       other is PetPrefs &&
       other.packId == packId &&
+      other.codexPackId == codexPackId &&
       other.packExplicit == packExplicit &&
       other.size == size &&
       other.customHeight == customHeight &&
@@ -139,13 +149,26 @@ class PetPrefs {
       other.loaded == loaded;
 
   @override
-  int get hashCode => Object.hash(packId, packExplicit, size, customHeight, quiet, position, hiddenUntil,
-      overlayRenderer, floatZoom, floatY, loaded);
+  int get hashCode => Object.hash(
+    packId,
+    codexPackId,
+    packExplicit,
+    size,
+    customHeight,
+    quiet,
+    position,
+    hiddenUntil,
+    overlayRenderer,
+    floatZoom,
+    floatY,
+    loaded,
+  );
 }
 
 class PetPrefsController extends Notifier<PetPrefs> {
   static const keys = (
     pack: 'pet.pack',
+    codexPack: 'pet.codex.pack',
     size: 'pet.size',
     customHeight: 'pet.custom_height',
     quiet: 'pet.quiet',
@@ -173,6 +196,7 @@ class PetPrefsController extends Notifier<PetPrefs> {
       await performanceReady(ref);
       if (!ref.mounted) return;
       final pack = prefs.getString(keys.pack);
+      final codexPack = prefs.getString(keys.codexPack);
       // A brought pet stays chosen; removing it here picks the default
       // (UserPetsController.remove).
       final explicit = pack == noPetId || builtInPets.contains(pack) || (pack != null && isUserPet(pack));
@@ -195,6 +219,7 @@ class PetPrefsController extends Notifier<PetPrefs> {
             ? defaultPetId
             : noPetId,
         packExplicit: explicit,
+        codexPackId: _isPackChoice(codexPack) ? codexPack : null,
         size: PetSize.fromName(prefs.getString(keys.size)),
         customHeight: _customHeight(prefs.getDouble(keys.customHeight)),
         quiet: prefs.getBool(keys.quiet) ?? false,
@@ -224,16 +249,30 @@ class PetPrefsController extends Notifier<PetPrefs> {
   }
 
   /// A pet, or [noPetId]. Choosing one also brings a hidden pet back.
-  Future<void> setPack(String id) =>
-      _save((s) => s.copyWith(packId: id, packExplicit: true, clearHidden: true), (p) async {
-        await p.setString(keys.pack, id);
-        await p.remove(keys.hidden);
-      });
+  Future<void> setPack(String id, {ChatBackend backend = ChatBackend.deepseek}) => _selectPack(id, backend, wake: true);
 
   /// The pet changed for the person, not by them (theirs is being removed):
   /// unlike [setPack], 「藏起来 1 小时」 stays as it was.
-  Future<void> replacePack(String id) =>
-      _save((s) => s.copyWith(packId: id, packExplicit: true), (p) => p.setString(keys.pack, id));
+  Future<void> replacePack(String id, {ChatBackend backend = ChatBackend.deepseek}) =>
+      _selectPack(id, backend, wake: false);
+
+  Future<void> _selectPack(String id, ChatBackend backend, {required bool wake}) {
+    final codex = backend == ChatBackend.codex;
+    return _save(
+      (s) => s.copyWith(
+        packId: codex ? null : id,
+        codexPackId: codex ? id : null,
+        packExplicit: codex ? null : true,
+        clearHidden: wake,
+      ),
+      (p) async {
+        await p.setString(codex ? keys.codexPack : keys.pack, id);
+        if (wake) await p.remove(keys.hidden);
+      },
+    );
+  }
+
+  static bool _isPackChoice(String? id) => id != null && (id == noPetId || builtInPets.contains(id) || isUserPet(id));
 
   /// First run's 「桌宠与悬浮窗」 was picked: the default pet, unless a pet
   /// (or 「不显示」) was chosen already. Without it a light phone, whose
@@ -264,9 +303,12 @@ class PetPrefsController extends Notifier<PetPrefs> {
     if (!zoom.isFinite || zoom <= 0 || zoom > 4 || !y.isFinite || y < -1 || y > 1) {
       throw ArgumentError('Invalid companion framing');
     }
-    return _save((s) => s.copyWith(floatZoom: zoom, floatY: y),
-        (p) => p.setString(keys.framing, jsonEncode({'zoom': zoom, 'y': y})));
+    return _save(
+      (s) => s.copyWith(floatZoom: zoom, floatY: y),
+      (p) => p.setString(keys.framing, jsonEncode({'zoom': zoom, 'y': y})),
+    );
   }
+
   Future<void> setPosition(double v) {
     final x = v.clamp(0.0, 1.0);
     return _save((s) => s.copyWith(position: x), (p) => p.setDouble(keys.position, x));
@@ -280,3 +322,10 @@ class PetPrefsController extends Notifier<PetPrefs> {
 }
 
 final petPrefsProvider = NotifierProvider<PetPrefsController, PetPrefs>(PetPrefsController.new);
+
+final petPackIdProvider = Provider.family<String, ChatBackend>((ref, backend) {
+  final prefs = ref.watch(petPrefsProvider);
+  return prefs.packIdFor(backend, petsEnabled: ref.watch(performanceDefaultsProvider.select((p) => p.petEnabled)));
+});
+
+final activePetPackIdProvider = Provider<String>((ref) => ref.watch(petPackIdProvider(ref.watch(backendProvider))));

@@ -12,6 +12,7 @@ import 'package:dsh_app/pets/pet_prefs.dart';
 import 'package:dsh_app/pets/pet_sheets.dart';
 import 'package:dsh_app/pets/pet_signals.dart';
 import 'package:dsh_app/pets/pet_state.dart';
+import 'package:dsh_app/state/backend_state.dart';
 import 'package:dsh_app/state/hosts_state.dart';
 import 'package:dsh_app/ui/chat/composer.dart';
 import 'package:dsh_app/ui/chat/run_info.dart';
@@ -118,10 +119,18 @@ class FixedPetPrefs extends PetPrefsController {
   PetPrefs build() => initial;
 
   @override
-  Future<void> setPack(String id) async => state = state.copyWith(packId: id, clearHidden: true);
+  Future<void> setPack(String id, {ChatBackend backend = ChatBackend.deepseek}) async {
+    state = backend == ChatBackend.codex
+        ? state.copyWith(codexPackId: id, clearHidden: true)
+        : state.copyWith(packId: id, clearHidden: true);
+  }
 
   @override
-  Future<void> replacePack(String id) async => state = state.copyWith(packId: id, packExplicit: true);
+  Future<void> replacePack(String id, {ChatBackend backend = ChatBackend.deepseek}) async {
+    state = backend == ChatBackend.codex
+        ? state.copyWith(codexPackId: id)
+        : state.copyWith(packId: id, packExplicit: true);
+  }
 
   @override
   Future<void> setSize(PetSize v) async => state = state.copyWith(size: v);

@@ -29,7 +29,6 @@ class CodexUsageRing extends ConsumerWidget {
         .where((window) => window.bucketId == 'codex' && window.durationMinutes == minutes)
         .firstOrNull
         ?.usedPercent;
-    final colors = Theme.of(context).colorScheme;
     final label = context.l10n.featuresCodexUsage;
     return IconButton(
       tooltip: label,
@@ -44,8 +43,7 @@ class CodexUsageRing extends ConsumerWidget {
         painter: _QuotaRingPainter(
           top: used(300),
           bottom: used(10080),
-          color: colors.primary,
-          track: colors.outlineVariant,
+          dark: Theme.of(context).brightness == Brightness.dark,
         ),
       ),
     );
@@ -53,32 +51,33 @@ class CodexUsageRing extends ConsumerWidget {
 }
 
 class _QuotaRingPainter extends CustomPainter {
-  const _QuotaRingPainter({required this.top, required this.bottom, required this.color, required this.track});
+  const _QuotaRingPainter({required this.top, required this.bottom, required this.dark});
 
   final double? top, bottom;
-  final Color color, track;
+  final bool dark;
 
   @override
   void paint(Canvas canvas, Size size) {
     const stroke = 2.5;
     const gap = .20;
     final rect = (Offset.zero & size).deflate(stroke / 2);
+    if (dark) canvas.drawCircle(rect.center, size.shortestSide / 2, Paint()..color = const Color(0xFFE8E8E8));
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = stroke
       ..strokeCap = StrokeCap.round;
     const sweep = math.pi - 2 * gap;
     for (final (start, direction, percent) in [(math.pi + gap, 1.0, top), (math.pi - gap, -1.0, bottom)]) {
-      canvas.drawArc(rect, start, direction * sweep, false, paint..color = track);
+      final remaining = percent == null ? const Color(0xFFC4C4C7) : const Color(0xFF141416);
+      canvas.drawArc(rect, start, direction * sweep, false, paint..color = remaining);
       if (percent != null && percent > 0) {
-        canvas.drawArc(rect, start, direction * sweep * percent / 100, false, paint..color = color);
+        canvas.drawArc(rect, start, direction * sweep * percent / 100, false, paint..color = const Color(0xFF929297));
       }
     }
   }
 
   @override
-  bool shouldRepaint(_QuotaRingPainter old) =>
-      top != old.top || bottom != old.bottom || color != old.color || track != old.track;
+  bool shouldRepaint(_QuotaRingPainter old) => top != old.top || bottom != old.bottom || dark != old.dark;
 }
 
 class _CodexUsageSheet extends ConsumerWidget {

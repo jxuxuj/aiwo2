@@ -5801,6 +5801,88 @@ class L10nZh extends L10n {
   String get companionAdaptNetwork => '网络不通';
 
   @override
+  String get conferenceTitle => '宠物大会';
+
+  @override
+  String get conferenceCreate => '创建大会';
+
+  @override
+  String get conferenceName => '大会名称';
+
+  @override
+  String get conferenceEmpty => '还没有大会';
+
+  @override
+  String get conferenceHistoryError => '无法读取或保存大会记录，请重试。';
+
+  @override
+  String get conferenceDeletePending => '等待删除分支';
+
+  @override
+  String get conferenceSetupPending => '等待创建分支';
+
+  @override
+  String conferenceConnectHost(String backend) {
+    return '请先连接 $backend 的主机。';
+  }
+
+  @override
+  String conferenceDeletionUnavailable(String backend) {
+    return '这台 $backend 主机暂不支持删除分支，请换一台支持的主机。';
+  }
+
+  @override
+  String get conferenceLoadChatsError => '加载对话失败';
+
+  @override
+  String get conferenceNoChats => '没有可选的对话。可以选择已结束任务的对话。';
+
+  @override
+  String get conferenceChooseChat => '选择对话';
+
+  @override
+  String get conferenceSearch => '搜索对话';
+
+  @override
+  String get conferenceDelete => '删除大会';
+
+  @override
+  String get conferenceDeleteConfirm => '删除此大会的历史和它创建的两个聊天分支？原来的两条对话会保留。';
+
+  @override
+  String get conferenceCancel => '取消';
+
+  @override
+  String get conferenceRetryDelete => '继续删除分支';
+
+  @override
+  String get conferencePrepare => '创建聊天分支';
+
+  @override
+  String get conferenceIntro => '你发言后，DeepSeek 和 Codex 各回应一次，随后最多再交流 3 次。';
+
+  @override
+  String conferenceBranchAction(String backend) {
+    return '$backend 分支有任务或需要确认。点上方角色查看。';
+  }
+
+  @override
+  String conferenceDeleteError(String backend) {
+    return '$backend 分支还未确认删除，可以重试。';
+  }
+
+  @override
+  String conferenceReplyError(String backend) {
+    return '$backend 操作失败。点上方角色查看分支状态。';
+  }
+
+  @override
+  String get conferenceInput => '在大会发言';
+
+  @override
+  String get conferenceSend => '发送';
+
+  @override
   String get automaticDiagnosticsRecover => '恢复本地记录';
 
   @override

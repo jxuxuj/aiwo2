@@ -542,6 +542,14 @@ final activeConnectionProvider = Provider<AsyncValue<HostConnection?>>((ref) {
   return connection;
 });
 
+/// A room can retain two chosen hosts without changing the main chat's host.
+final connectionForHostProvider = Provider.autoDispose.family<AsyncValue<HostConnection?>, HostRef>((ref, host) {
+  return _connectionForHost(ref, host).whenData((connection) {
+    if (connection == null || connection.kind != host.kind) return null;
+    return host.isLocal || connection.hostId == host.id ? connection : null;
+  });
+});
+
 AsyncValue<HostConnection?> _connectionForHost(Ref ref, HostRef host) {
   switch (host.kind) {
     case HostKind.local:

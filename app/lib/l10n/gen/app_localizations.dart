@@ -10766,6 +10766,150 @@ abstract class L10n {
   /// **'网络不通'**
   String get companionAdaptNetwork;
 
+  /// No description provided for @conferenceTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'宠物大会'**
+  String get conferenceTitle;
+
+  /// No description provided for @conferenceCreate.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建大会'**
+  String get conferenceCreate;
+
+  /// No description provided for @conferenceName.
+  ///
+  /// In zh, this message translates to:
+  /// **'大会名称'**
+  String get conferenceName;
+
+  /// No description provided for @conferenceEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没有大会'**
+  String get conferenceEmpty;
+
+  /// No description provided for @conferenceHistoryError.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法读取或保存大会记录，请重试。'**
+  String get conferenceHistoryError;
+
+  /// No description provided for @conferenceDeletePending.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待删除分支'**
+  String get conferenceDeletePending;
+
+  /// No description provided for @conferenceSetupPending.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待创建分支'**
+  String get conferenceSetupPending;
+
+  /// No description provided for @conferenceConnectHost.
+  ///
+  /// In zh, this message translates to:
+  /// **'请先连接 {backend} 的主机。'**
+  String conferenceConnectHost(String backend);
+
+  /// No description provided for @conferenceDeletionUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台 {backend} 主机暂不支持删除分支，请换一台支持的主机。'**
+  String conferenceDeletionUnavailable(String backend);
+
+  /// No description provided for @conferenceLoadChatsError.
+  ///
+  /// In zh, this message translates to:
+  /// **'加载对话失败'**
+  String get conferenceLoadChatsError;
+
+  /// No description provided for @conferenceNoChats.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有可选的对话。可以选择已结束任务的对话。'**
+  String get conferenceNoChats;
+
+  /// No description provided for @conferenceChooseChat.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择对话'**
+  String get conferenceChooseChat;
+
+  /// No description provided for @conferenceSearch.
+  ///
+  /// In zh, this message translates to:
+  /// **'搜索对话'**
+  String get conferenceSearch;
+
+  /// No description provided for @conferenceDelete.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除大会'**
+  String get conferenceDelete;
+
+  /// No description provided for @conferenceDeleteConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除此大会的历史和它创建的两个聊天分支？原来的两条对话会保留。'**
+  String get conferenceDeleteConfirm;
+
+  /// No description provided for @conferenceCancel.
+  ///
+  /// In zh, this message translates to:
+  /// **'取消'**
+  String get conferenceCancel;
+
+  /// No description provided for @conferenceRetryDelete.
+  ///
+  /// In zh, this message translates to:
+  /// **'继续删除分支'**
+  String get conferenceRetryDelete;
+
+  /// No description provided for @conferencePrepare.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建聊天分支'**
+  String get conferencePrepare;
+
+  /// No description provided for @conferenceIntro.
+  ///
+  /// In zh, this message translates to:
+  /// **'你发言后，DeepSeek 和 Codex 各回应一次，随后最多再交流 3 次。'**
+  String get conferenceIntro;
+
+  /// No description provided for @conferenceBranchAction.
+  ///
+  /// In zh, this message translates to:
+  /// **'{backend} 分支有任务或需要确认。点上方角色查看。'**
+  String conferenceBranchAction(String backend);
+
+  /// No description provided for @conferenceDeleteError.
+  ///
+  /// In zh, this message translates to:
+  /// **'{backend} 分支还未确认删除，可以重试。'**
+  String conferenceDeleteError(String backend);
+
+  /// No description provided for @conferenceReplyError.
+  ///
+  /// In zh, this message translates to:
+  /// **'{backend} 操作失败。点上方角色查看分支状态。'**
+  String conferenceReplyError(String backend);
+
+  /// No description provided for @conferenceInput.
+  ///
+  /// In zh, this message translates to:
+  /// **'在大会发言'**
+  String get conferenceInput;
+
+  /// No description provided for @conferenceSend.
+  ///
+  /// In zh, this message translates to:
+  /// **'发送'**
+  String get conferenceSend;
+
   /// No description provided for @automaticDiagnosticsRecover.
   ///
   /// In zh, this message translates to:

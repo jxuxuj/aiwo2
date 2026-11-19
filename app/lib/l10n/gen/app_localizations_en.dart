@@ -6145,6 +6145,90 @@ class L10nEn extends L10n {
   String get companionAdaptNetwork => 'no connection';
 
   @override
+  String get conferenceTitle => 'Pet conferences';
+
+  @override
+  String get conferenceCreate => 'Create conference';
+
+  @override
+  String get conferenceName => 'Conference name';
+
+  @override
+  String get conferenceEmpty => 'No conferences yet';
+
+  @override
+  String get conferenceHistoryError => 'Could not read or save the conference. Try again.';
+
+  @override
+  String get conferenceDeletePending => 'Waiting for branch deletion';
+
+  @override
+  String get conferenceSetupPending => 'Waiting for branches';
+
+  @override
+  String conferenceConnectHost(String backend) {
+    return 'Connect the $backend host first.';
+  }
+
+  @override
+  String conferenceDeletionUnavailable(String backend) {
+    return 'This $backend host cannot delete branches. Choose a supported host.';
+  }
+
+  @override
+  String get conferenceLoadChatsError => 'Could not load chats';
+
+  @override
+  String get conferenceNoChats => 'There are no eligible chats. Choose a chat with no work in progress.';
+
+  @override
+  String get conferenceChooseChat => 'Choose chat';
+
+  @override
+  String get conferenceSearch => 'Search chats';
+
+  @override
+  String get conferenceDelete => 'Delete conference';
+
+  @override
+  String get conferenceDeleteConfirm =>
+      'Delete this conference history and its two chat branches? Both original chats will be kept.';
+
+  @override
+  String get conferenceCancel => 'Cancel';
+
+  @override
+  String get conferenceRetryDelete => 'Continue deleting branches';
+
+  @override
+  String get conferencePrepare => 'Create chat branches';
+
+  @override
+  String get conferenceIntro =>
+      'After you speak, DeepSeek and Codex each reply, then exchange up to three more replies.';
+
+  @override
+  String conferenceBranchAction(String backend) {
+    return 'The $backend branch has active work or needs your input. Tap its avatar to open it.';
+  }
+
+  @override
+  String conferenceDeleteError(String backend) {
+    return 'Deletion of the $backend branch is unconfirmed. You can retry.';
+  }
+
+  @override
+  String conferenceReplyError(String backend) {
+    return 'The $backend request failed. Tap its avatar to check the branch.';
+  }
+
+  @override
+  String get conferenceInput => 'Message the conference';
+
+  @override
+  String get conferenceSend => 'Send';
+
+  @override
   String get automaticDiagnosticsRecover => 'Recover local records';
 
   @override

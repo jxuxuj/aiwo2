@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:dsh_app/pets/overlay_channel.dart';
 import 'package:dsh_app/pets/pet_prefs.dart';
+import 'package:dsh_app/state/backend_state.dart';
 import 'package:dsh_app/state/workshop_dependencies.dart';
 import 'package:dsh_app/update/update_http.dart';
 import 'package:dsh_app/workshop/workshop_http.dart';
@@ -56,9 +57,11 @@ class _PetPreferences extends PetPrefsController {
   PetPrefs build() { if (!started.isCompleted) started.complete(); return initial; }
   void restore(PetPrefs value) { restored = true; state = value; }
   @override
-  Future<void> replacePack(String id) async {
+  Future<void> replacePack(String id, {ChatBackend backend = ChatBackend.deepseek}) async {
     replacements.add(id);
-    state = state.copyWith(packId: id, packExplicit: true);
+    state = backend == ChatBackend.codex
+        ? state.copyWith(codexPackId: id)
+        : state.copyWith(packId: id, packExplicit: true);
   }
 }
 

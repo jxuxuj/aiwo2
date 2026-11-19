@@ -13,6 +13,7 @@ import '../common/sheet_title_bar.dart';
 import '../common/status_chip.dart';
 import '../companion/companion_page.dart';
 import '../onboarding/local_install.dart';
+import '../pets/pet_conference_page.dart';
 import '../settings/settings_widgets.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
@@ -171,6 +172,12 @@ class HostSheet extends ConsumerWidget {
                       navigator.pop();
                       unawaited(navigator.push(MaterialPageRoute<void>(builder: (_) => const CompanionPage())));
                     },
+                  ),
+                  SettingsTile(
+                    icon: Icons.forum_outlined,
+                    tinted: false,
+                    title: l10n.conferenceTitle,
+                    onTap: () => unawaited(showPetConferences(context)),
                   ),
                   SettingsTile(
                     icon: ssh.isEmpty && relayHosts.isEmpty ? AppIcons.add : AppIcons.configure,

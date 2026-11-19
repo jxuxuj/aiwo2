@@ -267,6 +267,23 @@ class CodexClient {
 
   Future<CodexUsage> readUsage() async => CodexUsage.parse(await _call('account/rateLimits/read', const {}));
 
+  Future<bool> supportsConferenceDeletion() async {
+    try {
+      final result = await _call('dsh/conferenceCapabilities', const {});
+      return result is Map && result['deleteBranch'] == true;
+    } on DshRemoteException catch (error) {
+      if (error.code == 'METHOD_NOT_ALLOWED') return false;
+      rethrow;
+    }
+  }
+
+  Future<void> deleteConferenceBranch(String branchId, String sourceId) async {
+    final result = await _call('dsh/conferenceBranchDelete', {'threadId': branchId, 'sourceId': sourceId});
+    if (result is! Map || result['deleted'] != true || result['threadId'] != branchId) {
+      throw const DshProtocolException('Codex did not confirm conference branch deletion');
+    }
+  }
+
   Future<void> watchApprovals(String threadId) async {
     try {
       await _call('dsh/approvals/watch', {'threadId': threadId});

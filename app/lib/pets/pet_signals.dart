@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../notify/chat_alerts.dart';
 import '../performance/performance_state.dart';
+import '../state/backend_state.dart';
 import '../state/chat_state.dart';
 import '../state/connection_state.dart';
 import '../state/hosts_state.dart';
@@ -113,19 +114,29 @@ class UserPetsController extends AsyncNotifier<List<PetPack>> {
   Future<void> remove(String id) async {
     if (!isUserPet(id)) return;
     final prefs = ref.read(petPrefsProvider.notifier);
-    final chosen = ref.read(petPrefsProvider).packId == id;
-    if (chosen) await prefs.replacePack(defaultPetId);
+    final chosen = ChatBackend.values.where((backend) => ref.read(petPackIdProvider(backend)) == id).toList();
+    for (final backend in chosen) {
+      await prefs.replacePack(defaultPetFor(backend), backend: backend);
+    }
     try {
       await ref.read(petLibraryProvider).remove(id);
     } on Object {
-      if (chosen && ref.mounted && ref.read(petPrefsProvider).packId == defaultPetId) await prefs.replacePack(id);
+      for (final backend in chosen) {
+        if (ref.mounted && ref.read(petPackIdProvider(backend)) == defaultPetFor(backend)) {
+          await prefs.replacePack(id, backend: backend);
+        }
+      }
       await _relist((was) => was);
       rethrow;
     }
     _changed(id);
     // Picked again while it was being deleted: it is gone, the default it is
     // (else no pet would draw, now or after a restart).
-    if (ref.mounted && ref.read(petPrefsProvider).packId == id) await prefs.replacePack(defaultPetId);
+    for (final backend in ChatBackend.values) {
+      if (ref.mounted && ref.read(petPackIdProvider(backend)) == id) {
+        await prefs.replacePack(defaultPetFor(backend), backend: backend);
+      }
+    }
     await _relist((was) => [...was.where((p) => p.id != id)]);
   }
 }
@@ -134,7 +145,7 @@ final userPetsProvider = AsyncNotifierProvider<UserPetsController, List<PetPack>
 
 /// The chosen pack; null for none (or while it loads, or when it is broken).
 final currentPetPackProvider = Provider<PetPack?>((ref) {
-  final id = ref.watch(petPrefsProvider.select((p) => p.packId));
+  final id = ref.watch(activePetPackIdProvider);
   if (id == noPetId) return null;
   return ref.watch(petPackProvider(id)).value;
 });
@@ -666,7 +677,7 @@ final petScopedStateProvider = Provider.family<PetState, PetScope>((ref, scope) 
     target: petTarget(global, signals),
     active: petActive(global, signals),
     foreground: ref.watch(appForegroundProvider),
-    packId: prefs.packId,
+    packId: ref.watch(activePetPackIdProvider),
     size: prefs.size,
     bodyHeight: prefs.bodyHeight,
     quiet: prefs.quiet,

@@ -567,7 +567,6 @@ class PetLayerState extends ConsumerState<PetLayer> with TickerProviderStateMixi
     final prefs = ref.read(petPrefsProvider);
     return _pack != null &&
         prefs.loaded &&
-        prefs.enabled &&
         !prefs.hiddenAt(_now) &&
         !ref.read(uiModeProvider).web &&
         _spot != null &&

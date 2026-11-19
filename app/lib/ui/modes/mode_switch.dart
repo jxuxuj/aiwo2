@@ -15,6 +15,7 @@ import '../../state/app_mode_state.dart';
 import '../common/app_sheet.dart';
 import '../common/sheet_title_bar.dart';
 import '../companion/companion_page.dart';
+import '../pets/pet_conference_page.dart';
 import '../settings/settings_widgets.dart';
 import '../shell/page_frame.dart';
 import '../tavern/tavern_home_page.dart';
@@ -118,6 +119,12 @@ class ModeSheet extends ConsumerWidget {
                         : const SizedBox(width: 20),
                   ),
                 ),
+              SettingsTile(
+                icon: Icons.forum_outlined,
+                tinted: false,
+                title: l10n.conferenceTitle,
+                onTap: () => unawaited(showPetConferences(context)),
+              ),
             ],
           ),
           SheetGroup(

@@ -3495,6 +3495,65 @@
   "companionAdaptUnreadable": "模型的回答看不懂",
   "companionAdaptEmpty": "模型没找到能用的对应",
   "companionAdaptNetwork": "网络不通",
+  "conferenceTitle": "宠物大会",
+  "conferenceCreate": "创建大会",
+  "conferenceName": "大会名称",
+  "conferenceEmpty": "还没有大会",
+  "conferenceHistoryError": "无法读取或保存大会记录，请重试。",
+  "conferenceDeletePending": "等待删除分支",
+  "conferenceSetupPending": "等待创建分支",
+  "conferenceConnectHost": "请先连接 {backend} 的主机。",
+  "@conferenceConnectHost": {
+    "placeholders": {
+      "backend": {
+        "type": "String"
+      }
+    }
+  },
+  "conferenceDeletionUnavailable": "这台 {backend} 主机暂不支持删除分支，请换一台支持的主机。",
+  "@conferenceDeletionUnavailable": {
+    "placeholders": {
+      "backend": {
+        "type": "String"
+      }
+    }
+  },
+  "conferenceLoadChatsError": "加载对话失败",
+  "conferenceNoChats": "没有可选的对话。可以选择已结束任务的对话。",
+  "conferenceChooseChat": "选择对话",
+  "conferenceSearch": "搜索对话",
+  "conferenceDelete": "删除大会",
+  "conferenceDeleteConfirm": "删除此大会的历史和它创建的两个聊天分支？原来的两条对话会保留。",
+  "conferenceCancel": "取消",
+  "conferenceRetryDelete": "继续删除分支",
+  "conferencePrepare": "创建聊天分支",
+  "conferenceIntro": "你发言后，DeepSeek 和 Codex 各回应一次，随后最多再交流 3 次。",
+  "conferenceBranchAction": "{backend} 分支有任务或需要确认。点上方角色查看。",
+  "@conferenceBranchAction": {
+    "placeholders": {
+      "backend": {
+        "type": "String"
+      }
+    }
+  },
+  "conferenceDeleteError": "{backend} 分支还未确认删除，可以重试。",
+  "@conferenceDeleteError": {
+    "placeholders": {
+      "backend": {
+        "type": "String"
+      }
+    }
+  },
+  "conferenceReplyError": "{backend} 操作失败。点上方角色查看分支状态。",
+  "@conferenceReplyError": {
+    "placeholders": {
+      "backend": {
+        "type": "String"
+      }
+    }
+  },
+  "conferenceInput": "在大会发言",
+  "conferenceSend": "发送",
   "automaticDiagnosticsRecover": "恢复本地记录",
   "automaticDiagnosticsRecoverHint": "仅在本机恢复分析记录，跳过已留存故障，不重新发送旧请求。",
   "automaticDiagnosticsTitle": "自动故障分析",

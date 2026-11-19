@@ -14,6 +14,7 @@ import '../../pets/pet_prefs.dart';
 import '../../pets/pet_signals.dart';
 import '../../pets/pet_state.dart';
 import '../../state/android_features.dart';
+import '../../state/backend_state.dart';
 import '../../state/compose_inbox.dart';
 import '../../state/ui_mode_state.dart';
 import '../../state/web_target.dart';
@@ -37,7 +38,7 @@ class PetEntryTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final id = ref.watch(petPrefsProvider.select((p) => p.packId));
+    final id = ref.watch(activePetPackIdProvider);
     final packName = id == noPetId ? null : ref.watch(petPackProvider(id)).value?.name;
     final name = AppLocale.isEnglish ? petNames[id] ?? packName ?? id : packName ?? petNames[id] ?? id;
     return SettingsTile(
@@ -51,17 +52,25 @@ class PetEntryTile extends ConsumerWidget {
 }
 
 /// 宠物设置.
-class PetSettingsPage extends ConsumerWidget {
+class PetSettingsPage extends ConsumerStatefulWidget {
   const PetSettingsPage({super.key});
 
   static Future<void> open(BuildContext context) =>
       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const PetSettingsPage()));
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PetSettingsPage> createState() => _PetSettingsPageState();
+}
+
+class _PetSettingsPageState extends ConsumerState<PetSettingsPage> {
+  late ChatBackend _backend = ref.read(backendProvider);
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = context.l10n;
     final hasOutsideOverlay = ref.watch(androidSystemFeaturesProvider) || ref.watch(operatingSystemProvider) == 'ios';
     final prefs = ref.watch(petPrefsProvider);
+    final packId = ref.watch(petPackIdProvider(_backend));
     final now = ref.watch(petClockProvider)();
     final hidden = prefs.hiddenAt(now) ? prefs.hiddenUntil : null;
     final notifier = ref.read(petPrefsProvider.notifier);
@@ -69,8 +78,24 @@ class PetSettingsPage extends ConsumerWidget {
       title: l10n.botsPets,
       children: [
         SettingsSection(
-          footer: Text(_source(l10n, prefs.packId, ref.watch(petPackProvider(prefs.packId)).value)),
-          children: const [PetPicker(importable: true)],
+          footer: Text(_source(l10n, packId, ref.watch(petPackProvider(packId)).value)),
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Wrap(
+                spacing: 8,
+                children: [
+                  for (final backend in ChatBackend.values)
+                    ChoiceChip(
+                      label: Text(backend.label),
+                      selected: _backend == backend,
+                      onSelected: (_) => setState(() => _backend = backend),
+                    ),
+                ],
+              ),
+            ),
+            PetPicker(key: ValueKey(_backend), importable: true, backend: _backend),
+          ],
         ),
         // 自己带来的素材：交给新对话里的 AI，用 pet-theme 技能转成宠物包.
         SettingsSection(
@@ -100,7 +125,7 @@ class PetSettingsPage extends ConsumerWidget {
             ],
           ),
         ExpandReveal(
-          open: prefs.enabled,
+          open: packId != noPetId,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
