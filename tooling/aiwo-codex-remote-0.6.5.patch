@@ -331,6 +331,91 @@ index 8025586..0fb65a2 100644
    compactHistoryEnabled = false
    private readonly streams = new Map<string, string>()
    private readonly incomingTransfers = new Map<string, IncomingTransfer>()
+diff --git a/packages/plugin/src/workspace-bridge.ts b/packages/plugin/src/workspace-bridge.ts
+index 5a9d93d..7d8cb59 100644
+--- a/packages/plugin/src/workspace-bridge.ts
++++ b/packages/plugin/src/workspace-bridge.ts
+@@ -7,6 +7,8 @@ import { pipeTerminalSpawner, type RemoteTerminalSpawner } from './remote-termin
+ export * from './remote-terminal-provider.js'
+ 
+ const MAX_READ_BYTES = 4 * 1024 * 1024
++// Matches AIwo's download budget. Each response is still bounded by MAX_READ_BYTES.
++const MAX_DOWNLOAD_BYTES = 300 * 1024 * 1024
+ 
+ export class WorkspaceBridgeState extends RemoteTerminalState {}
+ export type WorkspaceCwdResolver = (nativeId: string, signal: AbortSignal) => Promise<string | undefined>
+@@ -110,48 +112,56 @@ export class WorkspaceBridge {
+       }
+       const info = await stat(target)
+       const absolutePath = target
+-      const version = `${info.mtimeMs}:${info.size}`
++      const version = `${info.dev}:${info.ino}:${info.ctimeMs}:${info.mtimeMs}:${info.size}`
+       if (endpoint === 'workspaceFiles/stat') {
+         return { ok: true, value: { absolutePath, version, bytes: info.size } }
+       }
+       if (!info.isFile()) throw this.scopeError('WORKSPACE_INVALID_PATH', 'The requested workspace path is not a file.')
+-      if (info.size > MAX_READ_BYTES) throw this.scopeError('WORKSPACE_TOO_LARGE', 'The requested workspace file is too large.')
++      const binary = endpoint === 'workspaceFiles/readBytes'
++      if (info.size > (binary ? MAX_DOWNLOAD_BYTES : MAX_READ_BYTES)) {
++        throw this.scopeError('WORKSPACE_TOO_LARGE', 'The requested workspace file is too large.')
++      }
+       const offset = readOffset(args)
+       const limit = readLimit(args)
+       const file = await open(target, 'r')
+       let bytes: Buffer
+       try {
+-        // Bound allocation even if the file grows after stat. One extra byte
+-        // detects growth instead of silently returning a truncated snapshot.
+-        const buffer = Buffer.allocUnsafe(info.size + 1)
++        const sameFile = async (): Promise<boolean> => {
++          const current = await file.stat()
++          return current.isFile() && current.dev === info.dev && current.ino === info.ino
++            && current.size === info.size && current.mtimeMs === info.mtimeMs && current.ctimeMs === info.ctimeMs
++        }
++        const changed = () => this.scopeError('WORKSPACE_CHANGED', 'The workspace file changed while reading it. Retry the request.')
++        if (!await sameFile()) throw changed()
++        const start = binary ? Math.min(offset, info.size) : 0
++        const bytesToRead = binary ? Math.min(limit, info.size - start) : info.size
++        const buffer = Buffer.allocUnsafe(bytesToRead)
+         let length = 0
+         while (length < buffer.length) {
+           signal.throwIfAborted()
+-          const read = await file.read(buffer, length, buffer.length - length, length)
++          const read = await file.read(buffer, length, buffer.length - length, start + length)
+           if (read.bytesRead === 0) break
+           length += read.bytesRead
+         }
+-        if (length > MAX_READ_BYTES) throw this.scopeError('WORKSPACE_TOO_LARGE', 'The requested workspace file is too large.')
+-        if (length !== info.size) throw this.scopeError('WORKSPACE_CHANGED', 'The workspace file changed while reading it. Retry the request.')
+-        bytes = buffer.subarray(0, length)
++        if (length !== bytesToRead || !await sameFile()) throw changed()
++        bytes = buffer
+       } finally { await file.close() }
+-      if (endpoint === 'workspaceFiles/readBytes') {
+-        const slice = bytes.subarray(offset, Math.min(offset + limit, bytes.length))
++      if (binary) {
+         return {
+           ok: true,
+           value: {
+             absolutePath,
+             version,
+-            bytes: bytes.length,
++            bytes: info.size,
+             offset,
+-            data: slice.toString('base64'),
+-            eof: offset + slice.length >= bytes.length,
++            data: bytes.toString('base64'),
++            eof: offset + bytes.length >= info.size,
+           },
+         }
+       }
+       const text = bytes.toString('utf8')
+       const slice = text.slice(offset, offset + limit)
+-      return { ok: true, value: { absolutePath: target, version: `${info.mtimeMs}:${info.size}`, text: slice, offset, lines: slice.split('\n').length, eof: offset + slice.length >= text.length } }
++      return { ok: true, value: { absolutePath, version, text: slice, offset, lines: slice.split('\n').length, eof: offset + slice.length >= text.length } }
+     } catch (error) {
+       if (error instanceof RpcError) throw error
+       throw this.scopeError('WORKSPACE_UNAVAILABLE', 'The CodeX workspace file is unavailable.')
 diff --git a/packages/plugin/tests/codex-domain.test.ts b/packages/plugin/tests/codex-domain.test.ts
 index c8b3dc8..cdcca38 100644
 --- a/packages/plugin/tests/codex-domain.test.ts
@@ -465,3 +550,54 @@ index c8b3dc8..cdcca38 100644
 -})
 \ No newline at end of file
 +})
+diff --git a/packages/plugin/tests/codex-workspace-bridge.test.ts b/packages/plugin/tests/codex-workspace-bridge.test.ts
+index ca65a50..0098114 100644
+--- a/packages/plugin/tests/codex-workspace-bridge.test.ts
++++ b/packages/plugin/tests/codex-workspace-bridge.test.ts
+@@ -1,4 +1,4 @@
+-import { mkdtemp, realpath, writeFile, rm, truncate } from 'node:fs/promises'
++import { appendFile, mkdtemp, realpath, writeFile, rm, truncate } from 'node:fs/promises'
+ import { tmpdir } from 'node:os'
+ import { join } from 'node:path'
+ import { PassThrough } from 'node:stream'
+@@ -71,6 +71,40 @@ async function frame(stream: AsyncIterable<unknown> | undefined): Promise<Record
+ }
+ 
+ describe('CodeX workspace and terminal bridge', () => {
++  it('reads large downloads in bounded windows with consistent offsets and versions', async () => {
++    const root = await mkdtemp(join(tmpdir(), 'dsh-codex-download-'))
++    const window = 4 * 1024 * 1024
++    const content = Buffer.concat([Buffer.alloc(window, 0xfa), Buffer.from('last bytes')])
++    const file = join(root, 'update.apk')
++    const bridge = new CodexWorkspaceBridge(async () => root, () => false)
++    const args = { workspaceFileScopeId: 'codex:one', path: 'update.apk' }
++    try {
++      await writeFile(file, content)
++      const stat = await bridge.call('workspaceFiles/stat', { args }, signal)
++      const read = async (offset: number, length: number) => {
++        const result = await bridge.call('workspaceFiles/readBytes', {
++          args: { ...args, options: { range: { offset, length } } },
++        }, signal)
++        expect(result).toMatchObject({ ok: true })
++        return (result as { value: { offset: number; data: string; bytes: number; version: string; eof: boolean } }).value
++      }
++      const first = await read(0, content.length)
++      expect(first).toMatchObject({ bytes: content.length, offset: 0, eof: false })
++      expect(first.version).toBe((stat as { value: { version: string } }).value.version)
++      expect(Buffer.from(first.data, 'base64').length).toBe(window)
++      const last = await read(window, window)
++      expect(last).toMatchObject({ bytes: content.length, offset: window, version: first.version, eof: true })
++      expect(Buffer.concat([Buffer.from(first.data, 'base64'), Buffer.from(last.data, 'base64')]).equals(content)).toBe(true)
++      await expect(read(content.length, 1)).resolves.toMatchObject({ data: '', eof: true })
++      await appendFile(file, Buffer.from([0]))
++      expect((await read(window, 1)).version).not.toBe(first.version)
++      await expect(bridge.call('workspaceFiles/read', { args }, signal)).rejects.toMatchObject({ code: 'CODEX_WORKSPACE_TOO_LARGE' })
++    } finally {
++      await bridge.closeAll()
++      await rm(root, { recursive: true, force: true })
++    }
++  })
++
+   it('maps file calls to each thread cwd and rejects traversal', async () => {
+     const root = await mkdtemp(join(tmpdir(), 'dsh-codex-'))
+     const other = await mkdtemp(join(tmpdir(), 'dsh-codex-other-'))

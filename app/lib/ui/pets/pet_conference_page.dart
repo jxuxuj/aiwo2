@@ -33,25 +33,33 @@ class PetConferencePage extends ConsumerWidget {
     return AppPage.list(
       title: l10n.conferenceTitle,
       children: [
-        FilledButton.icon(
-          onPressed: rooms.hasValue
-              ? () {
-                  unawaited(
-                    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const _CreateConference())),
-                  );
-                }
-              : null,
-          icon: const Icon(Icons.add),
-          label: Text(l10n.conferenceCreate),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: FilledButton.icon(
+            onPressed: rooms.hasValue
+                ? () {
+                    unawaited(
+                      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const _CreateConference())),
+                    );
+                  }
+                : null,
+            icon: const Icon(Icons.add),
+            label: Text(l10n.conferenceCreate),
+          ),
         ),
         const SizedBox(height: 12),
         ...rooms.when(
           loading: () => const [Center(child: CircularProgressIndicator())],
           error: (_, _) => [Text(l10n.conferenceHistoryError)],
           data: (rooms) => [
-            if (rooms.isEmpty) Text(l10n.conferenceEmpty),
+            if (rooms.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                child: Text(l10n.conferenceEmpty, textAlign: TextAlign.center),
+              ),
             for (final room in rooms)
               Card(
+                margin: const EdgeInsets.fromLTRB(20, 0, 20, 10),
                 child: ListTile(
                   leading: const Icon(Icons.forum_outlined),
                   title: Text(room.title),
@@ -79,17 +87,12 @@ class PetConferencePage extends ConsumerWidget {
 
 typedef _SourceKey = ({HostRef host, ChatBackend backend});
 
-class _BranchDeletionUnavailable implements Exception {
-  const _BranchDeletionUnavailable();
-}
-
 final _conferenceSources = FutureProvider.autoDispose.family<List<ConferenceParticipant>?, _SourceKey>((
   ref,
   key,
 ) async {
   final client = ref.watch(connectionForHostProvider(key.host)).asData?.value?.client;
   if (client == null) return null;
-  if (!await ConferenceBranch(key.backend, client).supportsDeletion()) throw const _BranchDeletionUnavailable();
   return switch (key.backend) {
     ChatBackend.deepseek => [
       for (final session in await client.listSessions())
@@ -165,24 +168,54 @@ class _CreateConferenceState extends ConsumerState<_CreateConference> {
       if (relay?.signedIn == true)
         for (final host in relay!.hosts) HostRef.relay(host.id, name: host.name),
     };
+    final hosts = {
+      ChatBackend.deepseek: {if (!active.isLocal) active, HostRef.local, ...remote},
+      ChatBackend.codex: remote,
+    };
+    final canCreate =
+        !_saving && ChatBackend.values.every((backend) => hosts[backend]!.contains(_sources[backend]?.host));
+    final scheme = Theme.of(context).colorScheme;
     return AppPage.list(
       title: l10n.conferenceCreate,
+      subtitle: Text(l10n.conferenceSetupIntro),
       children: [
-        TextField(
-          controller: _title,
-          maxLength: 80,
-          decoration: InputDecoration(labelText: l10n.conferenceName),
-        ),
-        for (final backend in ChatBackend.values) ...[
-          _sourcePicker(
-            backend,
-            backend == ChatBackend.deepseek ? {if (!active.isLocal) active, HostRef.local, ...remote} : remote,
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: _title,
+                enabled: !_saving,
+                maxLength: 80,
+                textInputAction: TextInputAction.done,
+                decoration: InputDecoration(
+                  labelText: l10n.conferenceName,
+                  prefixIcon: const Icon(Icons.edit_outlined),
+                  counterText: '',
+                  filled: true,
+                  fillColor: scheme.surfaceContainerLow,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(18)),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(18),
+                    borderSide: BorderSide(color: scheme.outlineVariant),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              for (final backend in ChatBackend.values) ...[
+                _sourcePicker(backend, hosts[backend]!),
+                const SizedBox(height: 12),
+              ],
+              const SizedBox(height: 8),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(54)),
+                onPressed: canCreate ? _create : null,
+                icon: const Icon(Icons.forum_outlined, size: 21),
+                label: Text(l10n.conferenceCreate),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
-        ],
-        FilledButton(
-          onPressed: !_saving && _sources.length == ChatBackend.values.length ? _create : null,
-          child: Text(l10n.conferenceCreate),
         ),
       ],
     );
@@ -190,74 +223,118 @@ class _CreateConferenceState extends ConsumerState<_CreateConference> {
 
   Widget _sourcePicker(ChatBackend backend, Set<HostRef> options) {
     final l10n = context.l10n;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final selected = _hosts[backend];
     final host = options.contains(selected) ? selected : options.firstOrNull;
-    if (host == null) return Text(l10n.conferenceConnectHost(backend.label));
-    final key = (host: host, backend: backend);
-    final sources = ref.watch(_conferenceSources(key));
-    final source = _sources[backend];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(backend.label, style: Theme.of(context).textTheme.titleMedium),
-        DropdownButton<HostRef>(
-          isExpanded: true,
-          value: host,
-          items: [
-            for (final option in options)
-              DropdownMenuItem(
-                value: option,
-                child: Text(
-                  ref.watch(hostNameProvider(option)) ??
-                      (option.isLocal ? l10n.commonThisPhone : l10n.commonRemoteHost),
+    final key = host == null ? null : (host: host, backend: backend);
+    final sources = key == null
+        ? const AsyncData<List<ConferenceParticipant>?>(null)
+        : ref.watch(_conferenceSources(key));
+    final chosen = _sources[backend];
+    final source = chosen?.host == host ? chosen : null;
+    final hostNames = {
+      for (final option in options)
+        option: ref.watch(hostNameProvider(option)) ?? (option.isLocal ? l10n.commonThisPhone : l10n.commonRemoteHost),
+    };
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      color: scheme.surfaceContainerLow,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(24),
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 16, 6),
+            child: Row(
+              children: [
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    color: backend == ChatBackend.deepseek ? scheme.tertiaryContainer : scheme.primaryContainer,
+                  ),
+                  child: _ConferenceAvatar(backend, side: 44),
                 ),
-              ),
-          ],
-          onChanged: _saving
-              ? null
-              : (value) {
-                  if (value == null) return;
-                  setState(() {
-                    _hosts[backend] = value;
-                    _sources.remove(backend);
-                  });
-                },
-        ),
-        sources.when(
-          loading: () => const LinearProgressIndicator(),
-          error: (error, _) => Row(
-            children: [
-              Expanded(
-                child: Text(
-                  error is _BranchDeletionUnavailable
-                      ? l10n.conferenceDeletionUnavailable(backend.label)
-                      : l10n.conferenceLoadChatsError,
-                ),
-              ),
-              IconButton(onPressed: () => ref.invalidate(_conferenceSources(key)), icon: const Icon(Icons.refresh)),
-            ],
+                const SizedBox(width: 12),
+                Expanded(child: Text(backend.label, style: theme.textTheme.titleMedium)),
+                if (source != null) Icon(Icons.check_circle_outline, color: scheme.primary, size: 20),
+              ],
+            ),
           ),
-          data: (items) {
-            if (items == null) return Text(l10n.conferenceConnectHost(backend.label));
-            if (items.isEmpty) return Text(l10n.conferenceNoChats);
-            return OutlinedButton(
-              onPressed: _saving ? null : () => _pickSource(backend, items),
-              child: Text(
-                source?.host == host ? source!.title : l10n.conferenceChooseChat,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+          if (host != null)
+            PopupMenuButton<HostRef>(
+              enabled: !_saving && options.length > 1,
+              tooltip: l10n.conferenceChooseHost,
+              initialValue: host,
+              onSelected: (value) => setState(() {
+                if (value == host) return;
+                _hosts[backend] = value;
+                _sources.remove(backend);
+              }),
+              itemBuilder: (_) => [
+                for (final option in options)
+                  PopupMenuItem(
+                    value: option,
+                    child: Text(hostNames[option]!, overflow: TextOverflow.ellipsis),
+                  ),
+              ],
+              child: ListTile(
+                dense: true,
+                leading: Icon(host.isLocal ? Icons.smartphone_outlined : Icons.computer_outlined),
+                title: Text(hostNames[host]!, maxLines: 1, overflow: TextOverflow.ellipsis),
+                trailing: options.length > 1 ? const Icon(Icons.expand_more, size: 20) : null,
               ),
-            );
-          },
-        ),
-      ],
+            ),
+          Divider(height: 1, indent: 16, endIndent: 16, color: scheme.outlineVariant),
+          sources.when(
+            loading: () => ListTile(
+              dense: true,
+              leading: const Icon(Icons.chat_bubble_outline),
+              title: Text(l10n.conferenceLoadingChats),
+              trailing: const SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+            ),
+            error: (_, _) => ListTile(
+              leading: Icon(Icons.cloud_off_outlined, color: scheme.error),
+              title: Text(l10n.conferenceLoadChatsError),
+              trailing: IconButton(
+                tooltip: l10n.commonRetry,
+                onPressed: () => ref.invalidate(_conferenceSources(key!)),
+                icon: const Icon(Icons.refresh),
+              ),
+            ),
+            data: (items) {
+              final hasChoices = items?.isNotEmpty == true;
+              return ListTile(
+                leading: const Icon(Icons.chat_bubble_outline),
+                title: Text(
+                  items == null
+                      ? l10n.conferenceHostOffline
+                      : items.isEmpty
+                      ? l10n.conferenceNoChats
+                      : l10n.conferenceChooseChat,
+                  style: hasChoices ? theme.textTheme.bodyMedium : theme.textTheme.bodySmall,
+                ),
+                subtitle: source == null ? null : Text(source.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+                trailing: hasChoices ? const Icon(Icons.chevron_right, size: 20) : null,
+                onTap: !_saving && hasChoices ? () => _pickSource(backend, items!) : null,
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 
   Future<void> _pickSource(ChatBackend backend, List<ConferenceParticipant> choices) async {
-    final chosen = await showDialog<ConferenceParticipant>(
-      context: context,
-      builder: (_) => _SourceDialog(backend: backend, choices: choices),
+    final chosen = await Navigator.of(context).push(
+      MaterialPageRoute<ConferenceParticipant>(
+        builder: (_) => _SourcePage(backend: backend, choices: choices),
+      ),
     );
     if (mounted && chosen != null) {
       setState(() {
@@ -268,48 +345,49 @@ class _CreateConferenceState extends ConsumerState<_CreateConference> {
   }
 }
 
-class _SourceDialog extends StatefulWidget {
-  const _SourceDialog({required this.backend, required this.choices});
+class _SourcePage extends StatefulWidget {
+  const _SourcePage({required this.backend, required this.choices});
 
   final ChatBackend backend;
   final List<ConferenceParticipant> choices;
 
   @override
-  State<_SourceDialog> createState() => _SourceDialogState();
+  State<_SourcePage> createState() => _SourcePageState();
 }
 
-class _SourceDialogState extends State<_SourceDialog> {
+class _SourcePageState extends State<_SourcePage> {
   String _query = '';
 
   @override
   Widget build(BuildContext context) {
     final choices = widget.choices.where((item) => item.title.toLowerCase().contains(_query)).toList();
-    return AlertDialog(
-      title: Text('${widget.backend.label} · ${context.l10n.conferenceChooseChat}'),
-      content: SizedBox(
-        width: 360,
-        height: 380,
-        child: Column(
-          children: [
-            TextField(
+    return AppPage(
+      title: '${widget.backend.label} · ${context.l10n.conferenceChooseChat}',
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+          sliver: SliverToBoxAdapter(
+            child: TextField(
               onChanged: (value) => setState(() => _query = value.trim().toLowerCase()),
               decoration: InputDecoration(
                 prefixIcon: const Icon(Icons.search),
                 hintText: context.l10n.conferenceSearch,
               ),
             ),
-            Expanded(
-              child: ListView.builder(
-                itemCount: choices.length,
-                itemBuilder: (context, index) => ListTile(
-                  title: Text(choices[index].title, maxLines: 2, overflow: TextOverflow.ellipsis),
-                  onTap: () => Navigator.of(context).pop(choices[index]),
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
-      ),
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          sliver: SliverList.builder(
+            itemCount: choices.length,
+            itemBuilder: (context, index) => ListTile(
+              leading: const Icon(Icons.chat_bubble_outline, size: 20),
+              title: Text(choices[index].title, maxLines: 2, overflow: TextOverflow.ellipsis),
+              onTap: () => Navigator.of(context).pop(choices[index]),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -384,9 +462,7 @@ class _ConferenceRoomState extends ConsumerState<_ConferenceRoom> {
         try {
           final client = _client(room.participant(backend));
           if (client == null) throw const _ConferenceOffline();
-          final branch = ConferenceBranch(backend, client);
-          if (!await branch.supportsDeletion()) throw const _BranchDeletionUnavailable();
-          branches[backend] = branch;
+          branches[backend] = ConferenceBranch(backend, client);
         } catch (error) {
           _error(backend, error);
           return;
@@ -501,7 +577,7 @@ class _ConferenceRoomState extends ConsumerState<_ConferenceRoom> {
         try {
           final client = _client(participant);
           if (client == null) throw const _ConferenceOffline();
-          await ConferenceBranch(backend, client).delete(participant);
+          await ConferenceBranch(backend, client).archive(participant);
           await store.markDeleted(room.id, backend);
         } catch (error) {
           _error(backend, error);
@@ -550,7 +626,7 @@ class _ConferenceRoomState extends ConsumerState<_ConferenceRoom> {
             if (!_busy)
               IconButton(
                 tooltip: l10n.conferenceDelete,
-                icon: const Icon(Icons.delete_outline),
+                icon: const Icon(Icons.archive_outlined),
                 onPressed: () => _delete(room),
               ),
           ],
@@ -601,7 +677,6 @@ class _ConferenceRoomState extends ConsumerState<_ConferenceRoom> {
                   for (final entry in _failures.entries)
                     _status(switch (entry.value) {
                       _ConferenceOffline() => l10n.conferenceConnectHost(entry.key.label),
-                      _BranchDeletionUnavailable() => l10n.conferenceDeletionUnavailable(entry.key.label),
                       ConferenceAwaitingBranch() => l10n.conferenceBranchAction(entry.key.label),
                       _ =>
                         room.deleting

@@ -6,6 +6,7 @@ import 'package:dsh_app/state/backend_state.dart';
 import 'package:dsh_app/state/connection_state.dart';
 import 'package:dsh_app/state/hosts_state.dart';
 import 'package:dsh_app/ui/pets/pet_conference_page.dart';
+import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -165,13 +166,139 @@ void main() {
     expect(find.text('第二次回应'), findsOneWidget);
     expect(find.widgetWithIcon(IconButton, Icons.arrow_upward), findsOneWidget);
     expect(tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.arrow_upward)).onPressed, isNull);
-    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.tap(find.byIcon(Icons.archive_outlined));
     await tester.pumpAndSettle();
-    expect(find.text('删除此大会的历史和它创建的两个聊天分支？原来的两条对话会保留。'), findsOneWidget);
+    expect(find.text('移除这场大会及其历史，并归档它创建的两个聊天分支？'), findsOneWidget);
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
     expect(find.text('我们已经见过'), findsOneWidget);
   });
+
+  testWidgets('a shared desktop host can create a room and archive both branches without a deletion API', (
+    tester,
+  ) async {
+    usePhoneView(tester);
+    const host = HostRef.relay('pc', name: '会议电脑');
+    final carrier = _MeetingCarrier();
+    final client = DshClient.withCarrier(carrier);
+    addTearDown(client.close);
+    SharedPreferences.setMockInitialValues({
+      ActiveHostController.prefsKey: host.encode(),
+      'pet.pack': 'none',
+      'pet.codex.pack': 'none',
+    });
+    await tester.pumpWidget(
+      testApp(
+        const PetConferencePage(),
+        overrides: [
+          connectionForHostProvider.overrideWith(
+            (_, selected) => AsyncData(
+              selected == host
+                  ? HostConnection(client: client, isLocal: false, kind: HostKind.relay, hostId: host.id)
+                  : null,
+            ),
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '创建大会'));
+    await tester.pumpAndSettle();
+    expect(find.text('选择对话'), findsNWidgets(2));
+    final name = find.byType(TextField);
+    expect(tester.getTopLeft(name).dx, greaterThanOrEqualTo(20));
+    await tester.enterText(name, '联合大会');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    for (final (index, label) in ['DeepSeek 原对话', 'Codex 原对话'].indexed) {
+      final choose = find.text('选择对话').at(index);
+      await tester.ensureVisible(choose);
+      await tester.tap(choose);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(label));
+      await tester.pumpAndSettle();
+    }
+    final create = find.widgetWithText(FilledButton, '创建大会');
+    await tester.ensureVisible(create);
+    await tester.tap(create);
+    await tester.pumpAndSettle();
+    expect(find.text('联合大会'), findsOneWidget);
+    expect(carrier.forks, ['dsh-source', 'codex-source']);
+
+    await tester.tap(find.byIcon(Icons.archive_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '移除大会'));
+    await tester.pumpAndSettle();
+    expect(carrier.archives, ['dsh-branch', 'codex-branch']);
+    expect(find.text('还没有大会'), findsOneWidget);
+  });
+}
+
+class _MeetingCarrier extends DshCarrier {
+  final forks = <String>[];
+  final archives = <String>[];
+
+  @override
+  String get kind => 'fixture';
+
+  @override
+  DshTracer? get tracer => null;
+
+  @override
+  Future<RpcResult> call(String endpoint, Map<String, Object?> args, {Duration? timeout}) async {
+    if (endpoint == 'session/list') {
+      return const RpcOk({
+        'items': [
+          {
+            'sessionId': 'dsh-source',
+            'projections': {'values': {'title': 'DeepSeek 原对话'}},
+          },
+        ],
+      });
+    }
+    final id = (args['request'] as Map)['sessionId'] as String;
+    return switch (endpoint) {
+      'session/fork' => RpcOk({'sessionId': _fork(id, 'dsh-branch')}),
+      'workspace/archiveSession' => RpcOk({
+        'archivedSessionIds': [_archive(id)],
+      }),
+      _ => throw UnsupportedError(endpoint),
+    };
+  }
+
+  @override
+  Future<Object?> rawCall(String method, Object? params, {Duration? timeout}) async {
+    expect(method, 'codex.app.call');
+    final request = params as Map;
+    final id = (request['params'] as Map)['threadId'];
+    return switch (request['method']) {
+      'thread/list' => {
+        'data': [
+          {'id': 'codex-source', 'name': 'Codex 原对话'},
+        ],
+      },
+      'thread/fork' => {
+        'thread': {'id': _fork(id as String, 'codex-branch')},
+      },
+      'thread/archive' => {'archivedId': _archive(id as String)},
+      _ => throw UnsupportedError(request['method'] as String),
+    };
+  }
+
+  String _fork(String id, String child) {
+    forks.add(id);
+    return child;
+  }
+
+  String _archive(String id) {
+    archives.add(id);
+    return id;
+  }
+
+  @override
+  Future<DshMuxLink> openLink(MuxOptions options) => throw UnimplementedError();
+
+  @override
+  Future<void> close() async {}
 }
 
 Future<void> _waitForPetPrefs(ProviderContainer container) async {

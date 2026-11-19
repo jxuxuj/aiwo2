@@ -267,20 +267,19 @@ class CodexClient {
 
   Future<CodexUsage> readUsage() async => CodexUsage.parse(await _call('account/rateLimits/read', const {}));
 
-  Future<bool> supportsConferenceDeletion() async {
+  Future<void> archiveThread(String threadId) async {
     try {
-      final result = await _call('dsh/conferenceCapabilities', const {});
-      return result is Map && result['deleteBranch'] == true;
-    } on DshRemoteException catch (error) {
-      if (error.code == 'METHOD_NOT_ALLOWED') return false;
-      rethrow;
-    }
-  }
-
-  Future<void> deleteConferenceBranch(String branchId, String sourceId) async {
-    final result = await _call('dsh/conferenceBranchDelete', {'threadId': branchId, 'sourceId': sourceId});
-    if (result is! Map || result['deleted'] != true || result['threadId'] != branchId) {
-      throw const DshProtocolException('Codex did not confirm conference branch deletion');
+      final result = await _call('thread/archive', {'threadId': threadId});
+      if (result is! Map) throw const DshProtocolException('Codex did not confirm thread archive');
+    } on DshRemoteException catch (error, stack) {
+      // The previous request may have archived the branch before its reply was lost.
+      try {
+        final archived = await listThreads(archived: true);
+        if (archived.any((thread) => thread.id == threadId)) return;
+      } catch (_) {
+        // Keep the original error if the Host cannot prove the archive.
+      }
+      Error.throwWithStackTrace(error, stack);
     }
   }
 

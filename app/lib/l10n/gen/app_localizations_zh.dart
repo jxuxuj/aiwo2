@@ -5810,13 +5810,16 @@ class L10nZh extends L10n {
   String get conferenceName => '大会名称';
 
   @override
+  String get conferenceSetupIntro => '为两位伙伴各选一条对话，分别从分支加入大会。';
+
+  @override
   String get conferenceEmpty => '还没有大会';
 
   @override
   String get conferenceHistoryError => '无法读取或保存大会记录，请重试。';
 
   @override
-  String get conferenceDeletePending => '等待删除分支';
+  String get conferenceDeletePending => '等待归档分支';
 
   @override
   String get conferenceSetupPending => '等待创建分支';
@@ -5827,15 +5830,19 @@ class L10nZh extends L10n {
   }
 
   @override
-  String conferenceDeletionUnavailable(String backend) {
-    return '这台 $backend 主机暂不支持删除分支，请换一台支持的主机。';
-  }
+  String get conferenceChooseHost => '选择主机';
 
   @override
-  String get conferenceLoadChatsError => '加载对话失败';
+  String get conferenceHostOffline => '主机未连接';
 
   @override
-  String get conferenceNoChats => '没有可选的对话。可以选择已结束任务的对话。';
+  String get conferenceLoadingChats => '正在加载对话…';
+
+  @override
+  String get conferenceLoadChatsError => '无法加载对话';
+
+  @override
+  String get conferenceNoChats => '没有可用的对话';
 
   @override
   String get conferenceChooseChat => '选择对话';
@@ -5844,16 +5851,16 @@ class L10nZh extends L10n {
   String get conferenceSearch => '搜索对话';
 
   @override
-  String get conferenceDelete => '删除大会';
+  String get conferenceDelete => '移除大会';
 
   @override
-  String get conferenceDeleteConfirm => '删除此大会的历史和它创建的两个聊天分支？原来的两条对话会保留。';
+  String get conferenceDeleteConfirm => '移除这场大会及其历史，并归档它创建的两个聊天分支？';
 
   @override
   String get conferenceCancel => '取消';
 
   @override
-  String get conferenceRetryDelete => '继续删除分支';
+  String get conferenceRetryDelete => '继续归档分支';
 
   @override
   String get conferencePrepare => '创建聊天分支';
@@ -5868,7 +5875,7 @@ class L10nZh extends L10n {
 
   @override
   String conferenceDeleteError(String backend) {
-    return '$backend 分支还未确认删除，可以重试。';
+    return '$backend 分支暂未归档，可以重试。';
   }
 
   @override

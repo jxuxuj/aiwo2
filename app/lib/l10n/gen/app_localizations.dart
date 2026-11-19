@@ -10784,6 +10784,12 @@ abstract class L10n {
   /// **'大会名称'**
   String get conferenceName;
 
+  /// No description provided for @conferenceSetupIntro.
+  ///
+  /// In zh, this message translates to:
+  /// **'为两位伙伴各选一条对话，分别从分支加入大会。'**
+  String get conferenceSetupIntro;
+
   /// No description provided for @conferenceEmpty.
   ///
   /// In zh, this message translates to:
@@ -10799,7 +10805,7 @@ abstract class L10n {
   /// No description provided for @conferenceDeletePending.
   ///
   /// In zh, this message translates to:
-  /// **'等待删除分支'**
+  /// **'等待归档分支'**
   String get conferenceDeletePending;
 
   /// No description provided for @conferenceSetupPending.
@@ -10814,22 +10820,34 @@ abstract class L10n {
   /// **'请先连接 {backend} 的主机。'**
   String conferenceConnectHost(String backend);
 
-  /// No description provided for @conferenceDeletionUnavailable.
+  /// No description provided for @conferenceChooseHost.
   ///
   /// In zh, this message translates to:
-  /// **'这台 {backend} 主机暂不支持删除分支，请换一台支持的主机。'**
-  String conferenceDeletionUnavailable(String backend);
+  /// **'选择主机'**
+  String get conferenceChooseHost;
+
+  /// No description provided for @conferenceHostOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机未连接'**
+  String get conferenceHostOffline;
+
+  /// No description provided for @conferenceLoadingChats.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在加载对话…'**
+  String get conferenceLoadingChats;
 
   /// No description provided for @conferenceLoadChatsError.
   ///
   /// In zh, this message translates to:
-  /// **'加载对话失败'**
+  /// **'无法加载对话'**
   String get conferenceLoadChatsError;
 
   /// No description provided for @conferenceNoChats.
   ///
   /// In zh, this message translates to:
-  /// **'没有可选的对话。可以选择已结束任务的对话。'**
+  /// **'没有可用的对话'**
   String get conferenceNoChats;
 
   /// No description provided for @conferenceChooseChat.
@@ -10847,13 +10865,13 @@ abstract class L10n {
   /// No description provided for @conferenceDelete.
   ///
   /// In zh, this message translates to:
-  /// **'删除大会'**
+  /// **'移除大会'**
   String get conferenceDelete;
 
   /// No description provided for @conferenceDeleteConfirm.
   ///
   /// In zh, this message translates to:
-  /// **'删除此大会的历史和它创建的两个聊天分支？原来的两条对话会保留。'**
+  /// **'移除这场大会及其历史，并归档它创建的两个聊天分支？'**
   String get conferenceDeleteConfirm;
 
   /// No description provided for @conferenceCancel.
@@ -10865,7 +10883,7 @@ abstract class L10n {
   /// No description provided for @conferenceRetryDelete.
   ///
   /// In zh, this message translates to:
-  /// **'继续删除分支'**
+  /// **'继续归档分支'**
   String get conferenceRetryDelete;
 
   /// No description provided for @conferencePrepare.
@@ -10889,7 +10907,7 @@ abstract class L10n {
   /// No description provided for @conferenceDeleteError.
   ///
   /// In zh, this message translates to:
-  /// **'{backend} 分支还未确认删除，可以重试。'**
+  /// **'{backend} 分支暂未归档，可以重试。'**
   String conferenceDeleteError(String backend);
 
   /// No description provided for @conferenceReplyError.

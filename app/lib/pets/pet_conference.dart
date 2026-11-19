@@ -215,24 +215,17 @@ class ConferenceBranch {
     return child;
   }
 
-  Future<bool> supportsDeletion() => switch (backend) {
-    ChatBackend.deepseek => client.supportsSessionDeletion(),
-    ChatBackend.codex => CodexClient(client.carrier).supportsConferenceDeletion(),
-  };
-
-  Future<void> delete(ConferenceParticipant participant) async {
+  Future<void> archive(ConferenceParticipant participant) async {
     final id = participant.branch;
     if (id == null || id == participant.source) throw StateError('Missing conference branch');
     switch (backend) {
       case ChatBackend.deepseek:
-        try {
-          await client.deleteSessionPermanently(id);
-        } on DshRemoteException catch (error) {
-          // The fenced Host endpoint can confirm absence after a lost response.
-          if (error.code != 'not-found') rethrow;
+        final archived = await client.archiveSession(id, stopActivity: false);
+        if (!archived.contains(id)) {
+          throw const DshProtocolException('DeepSeek did not confirm session archive');
         }
       case ChatBackend.codex:
-        await CodexClient(client.carrier).deleteConferenceBranch(id, participant.source);
+        await CodexClient(client.carrier).archiveThread(id);
     }
   }
 

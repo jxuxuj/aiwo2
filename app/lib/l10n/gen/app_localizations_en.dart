@@ -6154,13 +6154,16 @@ class L10nEn extends L10n {
   String get conferenceName => 'Conference name';
 
   @override
+  String get conferenceSetupIntro => 'Choose a chat for each participant to branch from.';
+
+  @override
   String get conferenceEmpty => 'No conferences yet';
 
   @override
   String get conferenceHistoryError => 'Could not read or save the conference. Try again.';
 
   @override
-  String get conferenceDeletePending => 'Waiting for branch deletion';
+  String get conferenceDeletePending => 'Waiting to archive branches';
 
   @override
   String get conferenceSetupPending => 'Waiting for branches';
@@ -6171,15 +6174,19 @@ class L10nEn extends L10n {
   }
 
   @override
-  String conferenceDeletionUnavailable(String backend) {
-    return 'This $backend host cannot delete branches. Choose a supported host.';
-  }
+  String get conferenceChooseHost => 'Choose host';
+
+  @override
+  String get conferenceHostOffline => 'Host offline';
+
+  @override
+  String get conferenceLoadingChats => 'Loading chats…';
 
   @override
   String get conferenceLoadChatsError => 'Could not load chats';
 
   @override
-  String get conferenceNoChats => 'There are no eligible chats. Choose a chat with no work in progress.';
+  String get conferenceNoChats => 'No chats available';
 
   @override
   String get conferenceChooseChat => 'Choose chat';
@@ -6188,17 +6195,17 @@ class L10nEn extends L10n {
   String get conferenceSearch => 'Search chats';
 
   @override
-  String get conferenceDelete => 'Delete conference';
+  String get conferenceDelete => 'Remove conference';
 
   @override
   String get conferenceDeleteConfirm =>
-      'Delete this conference history and its two chat branches? Both original chats will be kept.';
+      'Remove this conference and its history, and archive the two chat branches it created?';
 
   @override
   String get conferenceCancel => 'Cancel';
 
   @override
-  String get conferenceRetryDelete => 'Continue deleting branches';
+  String get conferenceRetryDelete => 'Continue archiving branches';
 
   @override
   String get conferencePrepare => 'Create chat branches';
@@ -6214,7 +6221,7 @@ class L10nEn extends L10n {
 
   @override
   String conferenceDeleteError(String backend) {
-    return 'Deletion of the $backend branch is unconfirmed. You can retry.';
+    return 'The $backend branch has not been archived yet. You can retry.';
   }
 
   @override
