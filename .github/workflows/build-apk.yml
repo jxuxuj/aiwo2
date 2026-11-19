@@ -55,6 +55,21 @@ jobs:
       - name: Build release APK
         working-directory: app
         run: |
+          # Flutter's included Gradle build defaults to the plugin portal alone.
+          # Resolve Kotlin artifacts directly from Maven Central on CI.
+          gradle_home="${GRADLE_USER_HOME:-$HOME/.gradle}"
+          mkdir -p "$gradle_home/init.d"
+          cat > "$gradle_home/init.d/aiwo-flutter-plugins.gradle" <<'GRADLE'
+          gradle.beforeSettings { settings ->
+              def flutterGradle = new File(System.getenv('FLUTTER_ROOT'), 'packages/flutter_tools/gradle')
+              if (settings.settingsDir.canonicalFile == flutterGradle.canonicalFile) {
+                  settings.pluginManagement.repositories {
+                      mavenCentral()
+                      gradlePluginPortal()
+                  }
+              }
+          }
+          GRADLE
           printf 'sdk.dir=%s\nflutter.sdk=%s\n' "$ANDROID_HOME" "$FLUTTER_ROOT" > android/local.properties
           flutter build apk --release --flavor arm64 \
             --target-platform android-arm64 \
