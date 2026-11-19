@@ -40,10 +40,11 @@ typedef NoticeAction = ({String label, VoidCallback onPressed});
 /// 出错时图形是 danger 浅底的小方块、文字 danger 色;其余只是一行三级文字,
 /// 不打断阅读。带错误详情的点一下,下面展开原始的错误码和消息。
 class NoticeRow extends StatefulWidget {
-  const NoticeRow({super.key, required this.item, this.action});
+  const NoticeRow({super.key, required this.item, this.action, this.codex = false});
 
   final NoticeChatItem item;
   final NoticeAction? action;
+  final bool codex;
 
   @override
   State<NoticeRow> createState() => _NoticeRowState();
@@ -69,7 +70,7 @@ class _NoticeRowState extends State<NoticeRow> {
           }
           return (AppIcons.noApiKey, appL10n.chatDeepSeekKeyMissing);
         }
-        return (AppIcons.error, turnFailureText(failure?.code, message: failure?.message));
+        return (AppIcons.error, turnFailureText(failure?.code, message: failure?.message, codex: widget.codex));
       case 'aborted':
         return (AppIcons.stopped, appL10n.commonStopped);
       case 'max-tokens':
@@ -77,7 +78,7 @@ class _NoticeRowState extends State<NoticeRow> {
       case 'blocked':
         return (AppIcons.blocked, appL10n.chatTurnBlocked);
       case 'interrupted':
-        return (AppIcons.restart, appL10n.chatTurnEngineRestarted);
+        return (AppIcons.restart, widget.codex ? appL10n.chatCodexInterrupted : appL10n.chatTurnEngineRestarted);
       case 'retry':
         final m = _retryCount.firstMatch(item.text);
         final text = m == null

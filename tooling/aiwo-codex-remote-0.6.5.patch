@@ -1,8 +1,32 @@
 diff --git a/packages/plugin/src/codex/app-server.ts b/packages/plugin/src/codex/app-server.ts
-index 9b04439..0202b27 100644
+index 9b04439..b48f762 100644
 --- a/packages/plugin/src/codex/app-server.ts
 +++ b/packages/plugin/src/codex/app-server.ts
-@@ -312,6 +312,10 @@ function safeUpstreamError(value: unknown): CodexAppServerError {
+@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+ import { Buffer } from 'node:buffer'
+ import type { SafeLogger } from '../logging.js'
+ import { PLUGIN_VERSION } from '../version.js'
++import { codexErrorInfoCode } from './turn-end-reason.js'
+ 
+ const APP_SERVER_REQUEST_TIMEOUT_MS = 60_000
+ const APP_SERVER_START_TIMEOUT_MS = 15_000
+@@ -306,12 +307,26 @@ function safeUpstreamError(value: unknown): CodexAppServerError {
+   // Upstream messages may contain paths or prompt fragments. Only retain a
+   // short generic category for the Remote boundary.
+   const message = value.message.toLowerCase()
++  const data = isRecord(value.data) ? value.data : {}
++  const info = codexErrorInfoCode(data.codexErrorInfo ?? data.codex_error_info ?? value.codexErrorInfo)
++    ?.toLowerCase().replaceAll(/[^a-z0-9]/g, '')
++  if (info === 'usagelimitexceeded' || info === 'usagelimitreached'
++    || /\byou(?:['’]ve| have) hit your usage limit\b/.test(message)) {
++    return new CodexAppServerError('CODEX_USAGE_LIMIT_EXCEEDED', 'Codex reached a usage limit.')
++  }
++  if (info === 'ratelimitexceeded') {
++    return new CodexAppServerError('CODEX_RATE_LIMIT_EXCEEDED', 'Codex is temporarily rate limited.')
++  }
+   if (message.includes('active writer')) {
+     return new CodexAppServerError('CODEX_UPSTREAM_ERROR', 'Codex thread already has an active writer.')
+   }
    if (message.includes('not materialized yet') || message.includes('before first user message')) {
      return new CodexAppServerError(CODEX_THREAD_UNMATERIALIZED, CODEX_UNMATERIALIZED_THREAD_MESSAGE)
    }
@@ -331,6 +355,34 @@ index 8025586..0fb65a2 100644
    compactHistoryEnabled = false
    private readonly streams = new Map<string, string>()
    private readonly incomingTransfers = new Map<string, IncomingTransfer>()
+diff --git a/packages/plugin/src/codex/turn-end-reason.ts b/packages/plugin/src/codex/turn-end-reason.ts
+index a394884..c7cf436 100644
+--- a/packages/plugin/src/codex/turn-end-reason.ts
++++ b/packages/plugin/src/codex/turn-end-reason.ts
+@@ -26,13 +26,22 @@ export function projectTurnError(error: unknown): JsonRecord {
+   }
+   const value = record(error)
+   const message = string(value.message)?.trim()
+-  const codexInfo = string(value.codex_error_info)?.trim()
++  const info = value.codexErrorInfo ?? value.codex_error_info
++  const codexInfo = codexErrorInfoCode(info)
+   const code = (codexInfo && codexInfo !== '' ? codexInfo : undefined)
+     ?? string(value.code)?.trim()
+     ?? 'codex-turn-failed'
++  const status = codexInfo === undefined ? undefined : record(record(info)[codexInfo]).httpStatusCode
+   return {
+     message: message && message !== '' ? message : 'CodeX turn failed.',
+     code: code === '' ? 'codex-turn-failed' : code,
+     ...(codexInfo && codexInfo !== '' ? { codex_error_info: codexInfo } : {}),
++    ...(typeof status === 'number' && Number.isInteger(status) ? { status } : {}),
+   }
+ }
++
++export function codexErrorInfoCode(info: unknown): string | undefined {
++  if (typeof info === 'string') return info.trim() || undefined
++  const keys = Object.keys(record(info))
++  return keys.length === 1 ? keys[0] : undefined
++}
 diff --git a/packages/plugin/src/workspace-bridge.ts b/packages/plugin/src/workspace-bridge.ts
 index 5a9d93d..7d8cb59 100644
 --- a/packages/plugin/src/workspace-bridge.ts
@@ -550,6 +602,27 @@ index c8b3dc8..cdcca38 100644
 -})
 \ No newline at end of file
 +})
+diff --git a/packages/plugin/tests/codex-turn-end-reason.test.ts b/packages/plugin/tests/codex-turn-end-reason.test.ts
+index 7516de7..dde9a00 100644
+--- a/packages/plugin/tests/codex-turn-end-reason.test.ts
++++ b/packages/plugin/tests/codex-turn-end-reason.test.ts
+@@ -30,6 +30,16 @@ describe('turnEndReason', () => {
+     })
+   })
+ 
++  it('preserves the native camel-case usage category and a nested HTTP error', () => {
++    expect(turnEndReason({
++      status: 'failed', error: { message: 'Usage exhausted.', codexErrorInfo: 'usageLimitExceeded' },
++    })).toMatchObject({ error: { code: 'usageLimitExceeded' } })
++    expect(projectTurnError({
++      message: 'Connection closed.',
++      codexErrorInfo: { responseStreamDisconnected: { httpStatusCode: 503 } },
++    })).toMatchObject({ code: 'responseStreamDisconnected', status: 503 })
++  })
++
+   it('maps interrupted statuses without inventing an error payload', () => {
+     expect(turnEndReason({ status: 'interrupted' })).toEqual({ kind: 'interrupted' })
+     expect(turnEndReason({ status: 'completed' })).toEqual({ kind: 'completed' })
 diff --git a/packages/plugin/tests/codex-workspace-bridge.test.ts b/packages/plugin/tests/codex-workspace-bridge.test.ts
 index ca65a50..0098114 100644
 --- a/packages/plugin/tests/codex-workspace-bridge.test.ts

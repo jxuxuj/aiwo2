@@ -8600,6 +8600,30 @@ abstract class L10n {
   /// **'本轮出错了'**
   String get chatErrTurn;
 
+  /// No description provided for @chatCodexErrQuota.
+  ///
+  /// In zh, this message translates to:
+  /// **'Codex 已达到使用额度上限'**
+  String get chatCodexErrQuota;
+
+  /// No description provided for @chatCodexErrQuotaRetryAt.
+  ///
+  /// In zh, this message translates to:
+  /// **'Codex 已达到使用额度上限，{time} 后可重试'**
+  String chatCodexErrQuotaRetryAt(String time);
+
+  /// No description provided for @chatCodexErrUnknown.
+  ///
+  /// In zh, this message translates to:
+  /// **'Codex 未完成本轮，服务端未返回明确原因'**
+  String get chatCodexErrUnknown;
+
+  /// No description provided for @chatCodexInterrupted.
+  ///
+  /// In zh, this message translates to:
+  /// **'Codex 本轮已中断'**
+  String get chatCodexInterrupted;
+
   /// No description provided for @chatTurnSteps.
   ///
   /// In zh, this message translates to:

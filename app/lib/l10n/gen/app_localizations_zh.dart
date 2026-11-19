@@ -4665,6 +4665,20 @@ class L10nZh extends L10n {
   String get chatErrTurn => '本轮出错了';
 
   @override
+  String get chatCodexErrQuota => 'Codex 已达到使用额度上限';
+
+  @override
+  String chatCodexErrQuotaRetryAt(String time) {
+    return 'Codex 已达到使用额度上限，$time 后可重试';
+  }
+
+  @override
+  String get chatCodexErrUnknown => 'Codex 未完成本轮，服务端未返回明确原因';
+
+  @override
+  String get chatCodexInterrupted => 'Codex 本轮已中断';
+
+  @override
   String chatTurnSteps(int count) {
     return '$count 步';
   }

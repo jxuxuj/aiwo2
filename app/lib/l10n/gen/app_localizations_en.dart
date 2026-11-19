@@ -4957,6 +4957,20 @@ class L10nEn extends L10n {
   String get chatErrTurn => 'Something went wrong this turn';
 
   @override
+  String get chatCodexErrQuota => 'Codex reached a usage limit';
+
+  @override
+  String chatCodexErrQuotaRetryAt(String time) {
+    return 'Codex reached a usage limit. Try again after $time.';
+  }
+
+  @override
+  String get chatCodexErrUnknown => 'Codex did not finish this turn. The server did not specify why.';
+
+  @override
+  String get chatCodexInterrupted => 'This Codex turn was interrupted';
+
+  @override
   String chatTurnSteps(int count) {
     String _temp0 = intl.Intl.pluralLogic(count, locale: localeName, other: '$count steps', one: '1 step');
     return '$_temp0';

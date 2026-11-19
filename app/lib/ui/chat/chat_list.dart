@@ -17,12 +17,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/l10n.dart';
 import '../../pets/pet_signals.dart' show petHeadroomProvider;
 import '../../plugins/native/native_surface.dart' show nativeTurnNoteProvider;
+import '../../remote/codex/codex_failure.dart';
 import '../../state/agents_state.dart' show hostSessionsProvider, selectConversation;
 import '../../state/app_notes.dart';
 import '../../state/artifacts.dart';
 import '../../state/attachments.dart' show DraftAttachment;
 import '../../state/chat_reveal.dart';
 import '../../state/chat_state.dart';
+import '../../state/codex_state.dart' show codexThreadId;
 import '../../state/connection_state.dart';
 import '../../state/hosts_state.dart' show HostKind, activeHostProvider;
 import '../../state/regenerate.dart';
@@ -49,6 +51,7 @@ import 'widgets/assistant_message.dart';
 import 'widgets/attachments.dart';
 import 'widgets/background_task_notice.dart';
 import 'widgets/change_card.dart';
+import 'widgets/codex_usage_sheet.dart' show showCodexUsageDetails;
 import 'widgets/command_row.dart';
 import 'widgets/notice_row.dart';
 import 'widgets/question_card.dart';
@@ -1389,6 +1392,11 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
   /// 引擎拒绝这个模型时给去处:本机引擎太旧就「检查更新」(引擎随 App
   /// 更新),其余「换模型」。上下文超限也先换模型,不原样重发。
   NoticeAction? _noticeAction(NoticeChatItem notice) {
+    if (notice.kind == 'error' &&
+        codexThreadId(widget.sessionId) != null &&
+        codexFailureKind(notice.failure?.code, message: notice.failure?.message) == CodexFailureKind.usageLimit) {
+      return (label: appL10n.featuresCodexUsage, onPressed: () => unawaited(showCodexUsageDetails(context, ref)));
+    }
     final s = ref.read(chatProvider(widget.sessionId));
     if (s.running) return null;
     final code = notice.failure?.code ?? '';
@@ -1482,7 +1490,11 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
         buildRow: _rowWidget,
         gapBefore: _gapBefore,
       ),
-      NoticeRowData(:final item) => NoticeRow(item: item, action: _noticeAction(item)),
+      NoticeRowData(:final item) => NoticeRow(
+        item: item,
+        action: _noticeAction(item),
+        codex: codexThreadId(widget.sessionId) != null,
+      ),
       ChangeCardRow(:final files) => ChangeCard(files: files),
       ArtifactCardRow(:final group) => ArtifactCard(sessionId: widget.sessionId, group: group),
       CommandNoticeRow(:final notice) => CommandRow(notice: notice),

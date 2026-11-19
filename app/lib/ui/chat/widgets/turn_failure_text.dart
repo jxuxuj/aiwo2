@@ -1,4 +1,5 @@
 import '../../../l10n/l10n.dart';
+import '../../../remote/codex/codex_failure.dart';
 
 /// Codes DSH (0.2.1-rc.4+) answers before sending anything when the model
 /// itself can't be served: the official model listing says it needs a newer
@@ -12,21 +13,40 @@ const modelRefusalCodes = {'CLIENT_UPGRADE_REQUIRED', 'MODEL_UNSUPPORTED', 'UNSU
 final _forbidden = RegExp(r'\b403\b|permission[_ ](denied|error)', caseSensitive: false);
 
 /// 一轮出错时说明行上的短句,按错误码给;后端原文放在点开的详情里。
-String turnFailureText(String? code, {String? message}) => switch (code) {
-  'AUTH' when message != null && _forbidden.hasMatch(message) => appL10n.chatErrForbidden,
-  'AUTH' || 'INVALID_CREDENTIAL' => appL10n.chatErrApiKey,
-  'QUOTA' => appL10n.chatErrBalance,
-  'ACCOUNT_QUOTA' => appL10n.chatErrAccountQuota,
-  'RATE_LIMIT' => appL10n.chatErrRateLimit,
-  'CONTEXT_WINDOW_EXCEEDED' => appL10n.chatErrContextLength,
-  'SERVER' => appL10n.chatErrModelUnavailable,
-  final value? when RegExp(r'^HTTP_5\d\d$').hasMatch(value) => appL10n.chatErrModelUnavailable,
-  'TIMEOUT' => appL10n.chatErrModelTimeout,
-  'TRANSPORT' => appL10n.chatErrModelConnection,
-  'EMPTY_RESPONSE' => appL10n.chatErrModelEmpty,
-  // The engine is on the phone (updated with the app) or on the remote host.
-  'CLIENT_UPGRADE_REQUIRED' => appL10n.chatErrEngineOutdated,
-  'MODEL_UNSUPPORTED' => appL10n.chatErrModelUnsupported,
-  'UNSUPPORTED_REASONING_EFFORT' => appL10n.chatErrReasoningEffortUnsupported,
-  _ => appL10n.chatErrTurn,
-};
+String turnFailureText(String? code, {String? message, bool codex = false}) {
+  if (codex) {
+    switch (codexFailureKind(code, message: message)) {
+      case CodexFailureKind.usageLimit:
+        final time = codexUsageRetryTime(message);
+        return time == null ? appL10n.chatCodexErrQuota : appL10n.chatCodexErrQuotaRetryAt(time);
+      case CodexFailureKind.rateLimit:
+        return appL10n.chatErrRateLimit;
+      case CodexFailureKind.unavailable:
+        return appL10n.chatErrModelUnavailable;
+      case CodexFailureKind.disconnected:
+        return appL10n.chatErrModelConnection;
+      case CodexFailureKind.timedOut:
+        return appL10n.chatErrModelTimeout;
+      case null:
+        break;
+    }
+  }
+  return switch (code) {
+    'AUTH' when message != null && _forbidden.hasMatch(message) => appL10n.chatErrForbidden,
+    'AUTH' || 'INVALID_CREDENTIAL' => appL10n.chatErrApiKey,
+    'QUOTA' => appL10n.chatErrBalance,
+    'ACCOUNT_QUOTA' => appL10n.chatErrAccountQuota,
+    'RATE_LIMIT' => appL10n.chatErrRateLimit,
+    'CONTEXT_WINDOW_EXCEEDED' => appL10n.chatErrContextLength,
+    'SERVER' => appL10n.chatErrModelUnavailable,
+    final value? when RegExp(r'^HTTP_5\d\d$').hasMatch(value) => appL10n.chatErrModelUnavailable,
+    'TIMEOUT' => appL10n.chatErrModelTimeout,
+    'TRANSPORT' => appL10n.chatErrModelConnection,
+    'EMPTY_RESPONSE' => appL10n.chatErrModelEmpty,
+    // The engine is on the phone (updated with the app) or on the remote host.
+    'CLIENT_UPGRADE_REQUIRED' => appL10n.chatErrEngineOutdated,
+    'MODEL_UNSUPPORTED' => appL10n.chatErrModelUnsupported,
+    'UNSUPPORTED_REASONING_EFFORT' => appL10n.chatErrReasoningEffortUnsupported,
+    _ => codex ? appL10n.chatCodexErrUnknown : appL10n.chatErrTurn,
+  };
+}

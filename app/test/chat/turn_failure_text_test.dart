@@ -2,6 +2,22 @@ import 'package:dsh_app/ui/chat/widgets/turn_failure_text.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('Codex usage failures keep the official retry time and work on older hosts', () {
+    const message = 'You’ve hit your usage limit. Try again at Nov 20th, 2026 9:30 PM.';
+    for (final code in ['usageLimitExceeded', 'usage_limit_exceeded', 'codex-turn-failed']) {
+      expect(turnFailureText(code, message: message, codex: true), 'Codex 已达到使用额度上限，Nov 20th, 2026 9:30 PM 后可重试');
+    }
+    expect(turnFailureText('CODEX_USAGE_LIMIT_EXCEEDED', codex: true), 'Codex 已达到使用额度上限');
+  });
+
+  test('Codex distinguishes quota exhaustion from throttling, connection loss and unknown errors', () {
+    expect(turnFailureText('rateLimitExceeded', codex: true), turnFailureText('RATE_LIMIT'));
+    expect(turnFailureText('responseStreamDisconnected', codex: true), turnFailureText('TRANSPORT'));
+    expect(turnFailureText('remote_turn_silence', codex: true), turnFailureText('TIMEOUT'));
+    expect(turnFailureText('codex-turn-failed', message: 'HTTP 429', codex: true), 'Codex 未完成本轮，服务端未返回明确原因');
+    expect(turnFailureText('codex-turn-failed', message: 'You’ve hit your usage limit.'), '本轮出错了');
+  });
+
   final cases = <String?, String>{
     'AUTH': 'API Key 无效或已过期',
     'INVALID_CREDENTIAL': 'API Key 无效或已过期',

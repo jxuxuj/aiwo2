@@ -2940,6 +2940,17 @@
   "chatErrModelUnsupported": "当前模型不可用",
   "chatSwitchModel": "换模型",
   "chatErrTurn": "本轮出错了",
+  "chatCodexErrQuota": "Codex 已达到使用额度上限",
+  "chatCodexErrQuotaRetryAt": "Codex 已达到使用额度上限，{time} 后可重试",
+  "@chatCodexErrQuotaRetryAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "chatCodexErrUnknown": "Codex 未完成本轮，服务端未返回明确原因",
+  "chatCodexInterrupted": "Codex 本轮已中断",
   "chatTurnSteps": "{count} 步",
   "@chatTurnSteps": {
     "placeholders": {

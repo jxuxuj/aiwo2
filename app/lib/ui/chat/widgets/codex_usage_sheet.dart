@@ -19,6 +19,11 @@ final _codexUsageProvider = FutureProvider.autoDispose<CodexUsage>((ref) {
   return CodexClient(connection.client.carrier).readUsage();
 });
 
+Future<void> showCodexUsageDetails(BuildContext context, WidgetRef ref) {
+  ref.invalidate(_codexUsageProvider);
+  return showAppSheet<void>(context, isScrollControlled: true, builder: (_) => const _CodexUsageSheet());
+}
+
 class CodexUsageRing extends ConsumerWidget {
   const CodexUsageRing({super.key});
 
@@ -32,10 +37,7 @@ class CodexUsageRing extends ConsumerWidget {
     final label = context.l10n.featuresCodexUsage;
     return IconButton(
       tooltip: label,
-      onPressed: () {
-        ref.invalidate(_codexUsageProvider);
-        unawaited(showAppSheet<void>(context, isScrollControlled: true, builder: (_) => const _CodexUsageSheet()));
-      },
+      onPressed: () => unawaited(showCodexUsageDetails(context, ref)),
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints.tightFor(width: 40, height: 44),
       icon: CustomPaint(

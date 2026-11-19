@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
 import '../../state/chat_state.dart';
+import '../../state/codex_state.dart' show codexThreadId;
 import '../common/app_sheet.dart';
 import '../common/expand_reveal.dart';
 import '../common/sheet_title_bar.dart';
@@ -88,7 +89,7 @@ class TrajectorySheet extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _Header(trace: trace, total: total),
+                  _Header(trace: trace, total: total, codex: codexThreadId(sessionId) != null),
                   _Composition(trace: trace, total: total),
                   Expanded(
                     child: _EdgeFade(
@@ -214,10 +215,11 @@ class _EdgeFade extends StatelessWidget {
 
 /// 标题行:左上角关闭,"本轮轨迹 · 47 秒";没正常结束时下面一行说明。
 class _Header extends StatelessWidget {
-  const _Header({required this.trace, required this.total});
+  const _Header({required this.trace, required this.total, required this.codex});
 
   final TurnTrace trace;
   final Duration total;
+  final bool codex;
 
   @override
   Widget build(BuildContext context) {
@@ -230,9 +232,12 @@ class _Header extends StatelessWidget {
         ? (l10n.commonInProgress, theme.colorScheme.primary)
         : switch (reason?.kind) {
             'aborted' => (l10n.commonStopped, dsh.textTertiary),
-            'error' => (turnFailureText(reason?.error?.code, message: reason?.error?.message), dsh.danger),
+            'error' => (
+              turnFailureText(reason?.error?.code, message: reason?.error?.message, codex: codex),
+              dsh.danger,
+            ),
             'max-tokens' => (l10n.activityTraceOutputLimit, dsh.warning),
-            'interrupted' => (l10n.activityTraceEngineRestarted, dsh.warning),
+            'interrupted' => (codex ? l10n.chatCodexInterrupted : l10n.activityTraceEngineRestarted, dsh.warning),
             'blocked' => (l10n.activityTraceBlocked, dsh.warning),
             _ => (null, null),
           };
