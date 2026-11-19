@@ -1,12 +1,13 @@
 diff --git a/packages/plugin/src/codex/app-server.ts b/packages/plugin/src/codex/app-server.ts
-index 9b04439..53b77d9 100644
+index 9b04439..0202b27 100644
 --- a/packages/plugin/src/codex/app-server.ts
 +++ b/packages/plugin/src/codex/app-server.ts
-@@ -312,6 +312,9 @@ function safeUpstreamError(value: unknown): CodexAppServerError {
+@@ -312,6 +312,10 @@ function safeUpstreamError(value: unknown): CodexAppServerError {
    if (message.includes('not materialized yet') || message.includes('before first user message')) {
      return new CodexAppServerError(CODEX_THREAD_UNMATERIALIZED, CODEX_UNMATERIALIZED_THREAD_MESSAGE)
    }
-+  if (/^(?:thread not found: |no rollout found for thread id )[0-9a-f-]{36}$/.test(message)) {
++  if (value.code === -32600
++    && /^(?:thread not found: |thread not loaded: |no rollout found for thread id )[0-9a-f-]{36}$/.test(message)) {
 +    return new CodexAppServerError('CODEX_THREAD_NOT_FOUND', 'Codex thread was not found.')
 +  }
    if (message.includes('no rollout found')) {
